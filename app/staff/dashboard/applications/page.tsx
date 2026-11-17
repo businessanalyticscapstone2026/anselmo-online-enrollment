@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
+  ENROLLMENT_STATUS_OPTIONS,
   getEnrollmentStatusLabel,
   normalizeEnrollmentStatus,
 } from "@/lib/enrollmentStatus";
@@ -14,6 +15,9 @@ import {
   FileText,
   AlertCircle,
   User,
+  ClipboardCheck,
+  CheckCircle2,
+  Save,
 } from "lucide-react";
 
 type AppRecord = Record<string, unknown>;
@@ -66,6 +70,13 @@ const booleanLabel = (value: unknown): string => {
   if (/^(true|yes|1)$/i.test(text)) return "Yes";
   if (/^(false|no|0)$/i.test(text)) return "No";
   return text || "—";
+};
+
+const arrayLabel = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean).join(", ") || "—";
+  }
+  return firstText([value]) || "—";
 };
 
 const guardianName = (info: GuardianInfo | null): string =>
@@ -185,6 +196,12 @@ export default function ApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selected, setSelected] = useState<AppRecord | null>(null);
   const [previewFile, setPreviewFile] = useState<{ label: string; url: string } | null>(null);
+  const [statusTarget, setStatusTarget] = useState<AppRecord | null>(null);
+  const [statusDraft, setStatusDraft] = useState("pending");
+  const [statusRemarks, setStatusRemarks] = useState("");
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -212,6 +229,139 @@ export default function ApplicationsPage() {
       }
     }
   }, []);
+
+  const openStatusEditor = (record: AppRecord) => {
+    setStatusTarget(record);
+    setStatusDraft(normalizeEnrollmentStatus(record.status));
+    setStatusRemarks(
+      typeof record.registrar_remarks === "string" ? record.registrar_remarks : ""
+    );
+    setStatusError("");
+    setStatusMessage("");
+  };
+
+  const closeStatusEditor = () => {
+    if (statusSaving) return;
+    setStatusTarget(null);
+    setStatusError("");
+    setStatusMessage("");
+  };
+
+  const saveStatus = async () => {
+    if (!statusTarget || statusSaving) return;
+
+    const id = String(statusTarget.id);
+    const targetStatus = normalizeEnrollmentStatus(statusDraft);
+    const targetRemark = statusRemarks.trim();
+
+    setStatusSaving(true);
+    setStatusError("");
+    setStatusMessage("");
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw new Error(`Could not verify your staff session: ${sessionError.message}`);
+      }
+      if (!session) {
+        throw new Error("Your staff session has expired. Please sign in again.");
+      }
+
+      const response = await fetch("/api/staff/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          applicationId: id,
+          status: targetStatus,
+          remarks: targetRemark,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        data?: {
+          status?: string;
+          registrar_remarks?: string | null;
+          statusChanged?: boolean;
+          emailSent?: boolean;
+          emailError?: string | null;
+        };
+      };
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Error saving status update");
+      }
+
+      const verifiedStatus = normalizeEnrollmentStatus(
+        result.data?.status ?? targetStatus
+      );
+      const savedRemark =
+        result.data?.registrar_remarks !== undefined &&
+        result.data?.registrar_remarks !== null
+          ? String(result.data.registrar_remarks)
+          : null;
+
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("staff_registrar_remarks");
+          const existing = raw ? JSON.parse(raw) : {};
+          if (savedRemark !== null) {
+            existing[id] = savedRemark;
+          } else {
+            delete existing[id];
+          }
+          localStorage.setItem(
+            "staff_registrar_remarks",
+            JSON.stringify(existing)
+          );
+        } catch (cacheError) {
+          void cacheError;
+        }
+      }
+
+      const updatedFields = {
+        status: verifiedStatus,
+        registrar_remarks: savedRemark,
+      };
+
+      setRecords((prev) =>
+        prev.map((record) =>
+          String(record.id) === id ? { ...record, ...updatedFields } : record
+        )
+      );
+      setSelected((prev) =>
+        prev && String(prev.id) === id ? { ...prev, ...updatedFields } : prev
+      );
+      setStatusTarget((prev) =>
+        prev && String(prev.id) === id ? { ...prev, ...updatedFields } : prev
+      );
+      setStatusDraft(verifiedStatus);
+      setStatusRemarks(savedRemark ?? "");
+
+      const emailNotice = result.data?.emailSent
+        ? " A notification email was sent to the student's registered email."
+        : result.data?.statusChanged && result.data?.emailError
+          ? ` The student could not be notified by email: ${result.data.emailError}`
+          : "";
+
+      setStatusMessage(
+        `Enrollment status successfully updated to "${getEnrollmentStatusLabel(
+          verifiedStatus
+        )}".${emailNotice}`
+      );
+    } catch (err: unknown) {
+      setStatusError(
+        err instanceof Error ? err.message : "Error saving status update"
+      );
+    } finally {
+      setStatusSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -416,6 +566,52 @@ export default function ApplicationsPage() {
         selected.legal_guardian_contact_number,
         guardianInfo?.contactNumber,
       ]),
+      specialNeedsProgram: booleanLabel(
+        selected.special_needs_program ?? details.special_needs_program
+      ),
+      specialNeedsCondition:
+        firstText([
+          selected.special_needs_condition,
+          details.special_needs_condition,
+        ]) || "—",
+      specialNeedsDetail:
+        firstText([
+          selected.special_needs_detail,
+          details.special_needs_detail,
+        ]) || "—",
+      hasPwdId: booleanLabel(selected.has_pwd_id ?? details.has_pwd_id),
+      lastGradeLevelCompleted:
+        firstText([
+          selected.last_grade_level_completed,
+          details.last_grade_level_completed,
+        ]) || "—",
+      lastSchoolYearCompleted:
+        firstText([
+          selected.last_school_year_completed,
+          details.last_school_year_completed,
+        ]) || "—",
+      lastSchoolAttended:
+        firstText([
+          selected.last_school_attended,
+          details.last_school_attended,
+        ]) || "—",
+      lastSchoolId:
+        firstText([selected.last_school_id, details.last_school_id]) || "—",
+      semester: firstText([selected.semester, details.semester]) || "—",
+      track:
+        firstText([
+          selected.track,
+          selected.selected_track,
+          details.selected_track,
+        ]) || "—",
+      strand: getCluster(selected) || "—",
+      preferredModalities: arrayLabel(
+        selected.preferred_distance_modalities ??
+          details.preferred_distance_modalities
+      ),
+      certificationAccepted: booleanLabel(
+        selected.certification_accepted ?? details.certification_accepted
+      ),
     };
   }, [selected]);
 
@@ -539,13 +735,22 @@ export default function ApplicationsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <button
-                        onClick={() => setSelected(r)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-amber-50"
-                      >
-                        <Eye size={14} />
-                        View record
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => setSelected(r)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-amber-50"
+                        >
+                          <Eye size={14} />
+                          View record
+                        </button>
+                        <button
+                          onClick={() => openStatusEditor(r)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                        >
+                          <ClipboardCheck size={14} />
+                          Update status
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -673,6 +878,57 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
+              <div>
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  <ClipboardCheck size={15} /> Enrollment Profile
+                </h3>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <DetailField
+                    label="Special Needs Education Program"
+                    value={detail?.specialNeedsProgram ?? "—"}
+                  />
+                  <DetailField
+                    label="Special Needs Condition"
+                    value={detail?.specialNeedsCondition ?? "—"}
+                  />
+                  <DetailField
+                    label="Special Needs Detail"
+                    value={detail?.specialNeedsDetail ?? "—"}
+                  />
+                  <DetailField label="PWD ID" value={detail?.hasPwdId ?? "—"} />
+                  <DetailField
+                    label="Last Grade Level Completed"
+                    value={detail?.lastGradeLevelCompleted ?? "—"}
+                  />
+                  <DetailField
+                    label="Last School Year Completed"
+                    value={detail?.lastSchoolYearCompleted ?? "—"}
+                  />
+                  <DetailField
+                    label="Last School Attended"
+                    value={detail?.lastSchoolAttended ?? "—"}
+                  />
+                  <DetailField
+                    label="Last School ID"
+                    value={detail?.lastSchoolId ?? "—"}
+                  />
+                  <DetailField
+                    label="Semester"
+                    value={detail?.semester ?? "—"}
+                  />
+                  <DetailField label="Track" value={detail?.track ?? "—"} />
+                  <DetailField label="Strand" value={detail?.strand ?? "—"} />
+                  <DetailField
+                    label="Preferred Distance Modalities"
+                    value={detail?.preferredModalities ?? "—"}
+                  />
+                  <DetailField
+                    label="Certification Confirmed"
+                    value={detail?.certificationAccepted ?? "—"}
+                  />
+                </div>
+              </div>
+
               {/* Documents */}
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                 <h3 className="mb-3 flex items-center gap-2 font-semibold">
@@ -703,6 +959,115 @@ export default function ApplicationsPage() {
                 )}
               </div>
             </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusTarget && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 sm:p-6"
+          onClick={closeStatusEditor}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Update enrollment status"
+            className="w-full max-w-lg overflow-hidden rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-emerald-200 bg-white px-5 py-4">
+              <div>
+                <h3 className="text-base font-bold text-emerald-900">
+                  Update Enrollment Status
+                </h3>
+                <p className="mt-0.5 text-xs text-emerald-700">
+                  {[statusTarget.first_name, statusTarget.middle_name, statusTarget.last_name]
+                    .filter(Boolean)
+                    .map(String)
+                    .join(" ") || "Student Application"}{" "}
+                  · ID: {String(statusTarget.id)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeStatusEditor}
+                disabled={statusSaving}
+                className="rounded-lg p-2 text-emerald-900 hover:bg-emerald-50 hover:text-emerald-950 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800">
+                Enrollment status
+                <select
+                  value={statusDraft}
+                  onChange={(e) => setStatusDraft(e.target.value)}
+                  disabled={statusSaving}
+                  className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-300 disabled:opacity-60"
+                >
+                  {ENROLLMENT_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800">
+                Registrar remarks / rejection reason
+                <textarea
+                  value={statusRemarks}
+                  onChange={(e) => setStatusRemarks(e.target.value)}
+                  maxLength={1000}
+                  rows={4}
+                  placeholder="Optional remarks or rejection reason (e.g. Incomplete Form 138)"
+                  disabled={statusSaving}
+                  className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none placeholder:text-emerald-700/60 focus:border-emerald-300 disabled:opacity-60"
+                />
+              </label>
+
+              {statusError && (
+                <p className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                  <AlertCircle size={16} className="shrink-0" />
+                  <span>{statusError}</span>
+                </p>
+              )}
+              {statusMessage && (
+                <p className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                  <CheckCircle2 size={16} className="shrink-0" />
+                  <span>{statusMessage}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-emerald-200 bg-emerald-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={closeStatusEditor}
+                disabled={statusSaving}
+                className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveStatus()}
+                disabled={statusSaving}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-yellow-300 px-4 py-2 text-xs font-bold text-emerald-950 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {statusSaving ? (
+                  "Saving…"
+                ) : (
+                  <>
+                    <Save size={14} />
+                    Save status
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

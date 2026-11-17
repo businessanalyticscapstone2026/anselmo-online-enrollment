@@ -258,7 +258,7 @@ export default function StaffResetPasswordPage() {
         <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0b3d2e] px-4 py-10 text-emerald-50">
             <div
                 className="fixed inset-0 bg-cover bg-center opacity-40 brightness-75"
-                style={{ backgroundImage: "url('/school.jpg')" }}
+                style={{ backgroundImage: "url('/school-background.png')" }}
             />
             <div className="fixed inset-0 bg-linear-to-b from-[#0b3d2e]/75 via-[#0b3d2e]/60 to-[#052e1c]/85" />
 

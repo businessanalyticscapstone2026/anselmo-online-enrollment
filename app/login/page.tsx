@@ -484,7 +484,7 @@ function LoginContent() {
     <main className="relative min-h-screen overflow-hidden bg-[#0b3d2e] text-emerald-50">
       <div
         className="pointer-events-none fixed inset-0 bg-cover bg-center opacity-40 brightness-75"
-        style={{ backgroundImage: "url('/school.jpg')" }}
+        style={{ backgroundImage: "url('/school-background.png')" }}
       />
       <div className="fixed inset-0 bg-linear-to-b from-[#0b3d2e]/75 via-[#0b3d2e]/60 to-[#052e1c]/85 pointer-events-none" />
       <div className="pointer-events-none fixed -top-40 left-1/2 h-96 w-180 -translate-x-1/2 rounded-full bg-yellow-400/10 blur-3xl" />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { getTrackLabel } from "@/lib/clusters";
 import {
   getEnrollmentStatusLabel,
   normalizeEnrollmentStatus,
@@ -149,6 +150,28 @@ function getRowTrack(row: Row): "Academic" | "Tech Professional" | "" {
   return "";
 }
 
+function getSelectedTrack(row: Row): string {
+  const details =
+    row.student_details &&
+    typeof row.student_details === "object" &&
+    !Array.isArray(row.student_details)
+      ? (row.student_details as Row)
+      : {};
+
+  const raw = [
+    row.selected_track,
+    details.selected_track,
+    row.track,
+    details.track,
+  ].find((value) => typeof value === "string" && value.trim());
+
+  const text = String(raw ?? "").trim();
+  if (!text) return "Not provided";
+
+  const label = getTrackLabel(text);
+  return label === "Senior High Track" ? text : label;
+}
+
 function formatClusterName(value: string): string {
   if (!value) return "Not provided";
   const normalized = value.toLowerCase().trim();
@@ -254,6 +277,18 @@ function csvCell(value: unknown) {
   const guarded = ISO_DATE_PATTERN.test(text) ? `\t${text}` : text;
 
   return `"${guarded.replaceAll('"', '""')}"`;
+}
+
+const YES_NO_EXPORT_KEYS = new Set(["is_ip_community", "is_4ps_beneficiary"]);
+
+function yesNoExportValue(value: unknown): unknown {
+  if (typeof value === "boolean") return value ? "YES" : "NO";
+
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text === "true" || text === "1" || text === "yes") return "YES";
+  if (text === "false" || text === "0" || text === "no") return "NO";
+
+  return value;
 }
 
 function formatDate(value: unknown): string {
@@ -400,10 +435,12 @@ export default function ReportsPage() {
     };
   }, [printSectionId]);
 
+  const statusFilter = reportView === "summary" ? "enrolled" : status;
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       const rowStatus = normalizeEnrollmentStatus(r.status);
-      const statusMatches = status === "all" || rowStatus === status;
+      const statusMatches = statusFilter === "all" || rowStatus === statusFilter;
 
       const trackString = `${r.track ?? ""} ${r.selected_track ?? ""} ${getRowCluster(
         r
@@ -423,19 +460,15 @@ export default function ReportsPage() {
 
       return statusMatches && trackMatches;
     });
-  }, [rows, status, track]);
+  }, [rows, statusFilter, track]);
 
-  const enrolled = filtered.filter(
-    (r) => normalizeEnrollmentStatus(r.status) === "enrolled"
-  ).length;
-
-  const pending = filtered.filter(
-    (r) => normalizeEnrollmentStatus(r.status) === "pending"
-  ).length;
-
-  const rejected = filtered.filter(
-    (r) => normalizeEnrollmentStatus(r.status) === "rejected"
-  ).length;
+  const summaryRows = useMemo(
+    () =>
+      filtered.filter(
+        (r) => normalizeEnrollmentStatus(r.status) === "enrolled"
+      ),
+    [filtered]
+  );
 
   const genderGroups = useMemo<SectionGenderGroup[]>(() => {
     const sectionsById = new Map<string, SectionRecord>();
@@ -874,7 +907,7 @@ export default function ReportsPage() {
       return;
     }
 
-    if (!filtered.length) return;
+    if (!summaryRows.length) return;
 
     // Prioritized columns for clean spreadsheet export
     const primaryCols = [
@@ -904,10 +937,20 @@ export default function ReportsPage() {
       "requirements_documents",
     ]);
 
-    const exportRows: Row[] = filtered.map((r) => ({
-      ...r,
-      status: normalizeEnrollmentStatus(r.status),
-    }));
+    const exportRows: Row[] = summaryRows.map((r) => {
+      const row: Row = {
+        ...r,
+        status: normalizeEnrollmentStatus(r.status),
+      };
+
+      for (const key of YES_NO_EXPORT_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(row, key)) {
+          row[key] = yesNoExportValue(row[key]);
+        }
+      }
+
+      return row;
+    });
     const allKeys = Array.from(
       new Set(exportRows.flatMap((r) => Object.keys(r)))
     );
@@ -957,7 +1000,7 @@ export default function ReportsPage() {
       ? genderGroups.length === 0
       : reportView === "analytics"
         ? false
-        : filtered.length === 0);
+        : summaryRows.length === 0);
 
   return (
     <div className="space-y-6">
@@ -1055,10 +1098,24 @@ export default function ReportsPage() {
           }`}
         >
           {[
-            { label: "Records in report", value: filtered.length },
-            { label: "Pending", value: pending },
-            { label: "Enrolled", value: enrolled },
-            { label: "Rejected", value: rejected },
+            { label: "Enrolled students", value: summaryRows.length },
+            {
+              label: "Academic",
+              value: summaryRows.filter((r) => getRowTrack(r) === "Academic")
+                .length,
+            },
+            {
+              label: "Tech Professional",
+              value: summaryRows.filter(
+                (r) => getRowTrack(r) === "Tech Professional"
+              ).length,
+            },
+            {
+              label: "Assigned to section",
+              value: summaryRows.filter((r) =>
+                String(r.assigned_section_id ?? "").trim()
+              ).length,
+            },
           ].map((k) => (
             <div
               key={k.label}
@@ -1134,25 +1191,34 @@ export default function ReportsPage() {
                   ? "Gender distribution is grouped by each student's assigned section. Use the filters to narrow the report."
                   : reportView === "analytics"
                     ? "Analytics are computed from current filters. Export includes charts summary and prescriptive insights."
-                    : "Select status and track categories before exporting."}
+                    : "Enrollment summary includes enrolled students only. Select a track category before exporting."}
               </p>
           </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <label className="text-xs text-emerald-900">
-            Enrollment status
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
-            >
-              <option value="all">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="enrolled">Enrolled</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </label>
+          {reportView === "summary" ? (
+            <div className="text-xs text-emerald-900">
+              Enrollment status
+              <div className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm font-semibold text-emerald-700">
+                Enrolled only
+              </div>
+            </div>
+          ) : (
+            <label className="text-xs text-emerald-900">
+              Enrollment status
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="enrolled">Enrolled</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </label>
+          )}
 
           <label className="text-xs text-emerald-900">
             Track category
@@ -1196,7 +1262,7 @@ export default function ReportsPage() {
               ? "CSV lists each section with its adviser and students grouped Male • Female • Unspecified. PDF opens the print dialog (choose Save as PDF)."
               : reportView === "analytics"
                 ? "CSV exports dashboard analytics (status, cluster, gender, track) and prescriptive insights. PDF prints this analytics report."
-                : "Exports full student details including submitted credentials. PDF opens the print dialog (choose Save as PDF)."}
+                : "Exports enrolled students only, with full student details including submitted credentials. PDF opens the print dialog (choose Save as PDF)."}
           </p>
           <button
             onClick={() => window.print()}
@@ -1215,11 +1281,11 @@ export default function ReportsPage() {
             <div>
               <h2 className="font-semibold">Report Preview</h2>
               <p className="mt-1 text-xs text-emerald-800 print:text-gray-500">
-                Showing filtered records for evaluation.
+                Showing enrolled students for the selected track.
               </p>
             </div>
             <span className="text-xs text-emerald-700 font-mono print:text-emerald-950">
-              {filtered.length} total records
+              {summaryRows.length} enrolled students
             </span>
           </div>
 
@@ -1235,7 +1301,7 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-200/10 print:divide-gray-200">
-                {filtered.slice(0, 100).map((r) => (
+                {summaryRows.slice(0, 100).map((r) => (
                   <tr key={String(r.id)} className="hover:bg-emerald-50">
                     <td className="px-5 py-4 font-medium print:py-2">
                       {[r.first_name, r.middle_name, r.last_name]
@@ -1243,7 +1309,7 @@ export default function ReportsPage() {
                         .join(" ") || "Unnamed applicant"}
                     </td>
                     <td className="px-5 py-4 text-xs text-emerald-700 print:py-2 print:text-emerald-950">
-                      {String(r.track || r.selected_track || "Senior High Track")}
+                      {getSelectedTrack(r)}
                       {getRowCluster(r) ? ` • ${getRowCluster(r)}` : ""}
                     </td>
                     <td className="px-5 py-4 text-xs capitalize print:py-2">
@@ -1259,13 +1325,13 @@ export default function ReportsPage() {
                     </td>
                   </tr>
                 ))}
-                {!loading && filtered.length === 0 && (
+                {!loading && summaryRows.length === 0 && (
                   <tr>
                     <td
                       colSpan={5}
                       className="px-5 py-10 text-center text-emerald-900 print:text-gray-500"
                     >
-                      No records match the selected filters.
+                      No enrolled students match the selected filters.
                     </td>
                   </tr>
                 )}

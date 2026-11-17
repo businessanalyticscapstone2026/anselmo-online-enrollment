@@ -12,6 +12,13 @@ import {
   getTrackLabel,
   isValidClusterForTrack,
 } from "@/lib/clusters";
+import {
+  DISTANCE_LEARNING_MODALITIES,
+  SEMESTER_OPTIONS,
+  SPECIAL_NEEDS_DETAILS,
+  SPECIAL_NEEDS_DIAGNOSES,
+  SPECIAL_NEEDS_MANIFESTATIONS,
+} from "@/lib/enrollmentFormOptions";
 
 interface AddressState {
   houseNo: string;
@@ -54,25 +61,33 @@ const NON_DIGITS = /\D/g;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CONTACT_PATTERN = /^\d{11}$/;
 const ZIP_PATTERN = /^\d{4}$/;
+function dateInputValue(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-function capitalizeWords(value: string): string {
-  return value.replace(
-    /(^|\s)(\S)/g,
-    (_match, separator: string, character: string) =>
-      separator + character.toUpperCase()
-  );
+const TODAY = new Date();
+const CURRENT_YEAR = TODAY.getFullYear();
+const MIN_BIRTH_YEAR = CURRENT_YEAR - 30;
+const MIN_BIRTH_DATE = `${MIN_BIRTH_YEAR}-01-01`;
+const MAX_BIRTH_DATE = dateInputValue(TODAY);
+
+function uppercaseValue(value: string): string {
+  return value.toUpperCase();
 }
 
 function keepNameCharacters(value: string, maxLength = 100): string {
-  return capitalizeWords(value.replace(NAME_CHARACTERS, "").slice(0, maxLength));
+  return uppercaseValue(value.replace(NAME_CHARACTERS, "").slice(0, maxLength));
 }
 
 function keepTextCharacters(value: string, maxLength = 150): string {
-  return capitalizeWords(value.replace(TEXT_CHARACTERS, "").slice(0, maxLength));
+  return uppercaseValue(value.replace(TEXT_CHARACTERS, "").slice(0, maxLength));
 }
 
 function keepTextAndNumberCharacters(value: string, maxLength = 150): string {
-  return capitalizeWords(
+  return uppercaseValue(
     value.replace(TEXT_AND_NUMBER_CHARACTERS, "").slice(0, maxLength)
   );
 }
@@ -137,6 +152,24 @@ function FormContent() {
   const [isIpCommunity, setIsIpCommunity] = useState(false);
   const [is4psBeneficiary, setIs4psBeneficiary] = useState(false);
 
+  // Special needs education program
+  const [specialNeedsProgram, setSpecialNeedsProgram] = useState<boolean | null>(null);
+  const [specialNeedsGroup, setSpecialNeedsGroup] = useState("");
+  const [specialNeedsCondition, setSpecialNeedsCondition] = useState("");
+  const [specialNeedsDetail, setSpecialNeedsDetail] = useState("");
+  const [hasPwdId, setHasPwdId] = useState<boolean | null>(null);
+
+  // Returning learner / transfer details
+  const [lastGradeLevelCompleted, setLastGradeLevelCompleted] = useState("");
+  const [lastSchoolYearCompleted, setLastSchoolYearCompleted] = useState("");
+  const [lastSchoolAttended, setLastSchoolAttended] = useState("");
+  const [lastSchoolId, setLastSchoolId] = useState("");
+
+  // Senior high school details
+  const [semester, setSemester] = useState("");
+  const [preferredModalities, setPreferredModalities] = useState<string[]>([]);
+  const [certificationAccepted, setCertificationAccepted] = useState(false);
+
   // Parent / guardian information
   const [guardians, setGuardians] = useState<GuardianState[]>([
     { ...initialGuardian },
@@ -191,6 +224,32 @@ function FormContent() {
     setPermanentAddress((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleSpecialNeedsAnswer = (answer: boolean) => {
+    setSpecialNeedsProgram(answer);
+    if (!answer) {
+      setSpecialNeedsGroup("");
+      setSpecialNeedsCondition("");
+      setSpecialNeedsDetail("");
+    }
+  };
+
+  const handleSpecialNeedsCondition = (
+    group: "diagnosis" | "manifestation",
+    condition: string
+  ) => {
+    setSpecialNeedsGroup(group);
+    setSpecialNeedsCondition(condition);
+    setSpecialNeedsDetail("");
+  };
+
+  const toggleModality = (modality: string) => {
+    setPreferredModalities((prev) =>
+      prev.includes(modality)
+        ? prev.filter((item) => item !== modality)
+        : [...prev, modality]
+    );
+  };
+
   function validateForm(): string {
     if (!lastName.trim() || !firstName.trim()) {
       return "Last name and first name are required.";
@@ -223,9 +282,13 @@ function FormContent() {
     if (
       Number.isNaN(parsedDob.getTime()) ||
       parsedDob.toISOString().slice(0, 10) !== dob ||
-      parsedDob > new Date()
+      dob > MAX_BIRTH_DATE
     ) {
       return "Please enter a valid date of birth that is not in the future.";
+    }
+
+    if (dob < MIN_BIRTH_DATE || dob > MAX_BIRTH_DATE) {
+      return `Birth date must be between ${MIN_BIRTH_YEAR} and ${CURRENT_YEAR}.`;
     }
 
     if (!pob.trim()) {
@@ -294,19 +357,22 @@ function FormContent() {
     const guardianLabels = ["Father", "Mother", "Legal Guardian"];
 
     for (let index = 0; index < guardianLabels.length; index++) {
-      const guardian = guardians[index];
+      const guardian = guardians[index] ?? initialGuardian;
       const label = guardianLabels[index];
 
-      if (!guardian) {
+      if (!guardians[index] && index !== 0) {
         return `${label}'s information is required.`;
       }
 
-      const missingGuardianFields = [
-        ["last name", guardian.lastName],
-        ["first name", guardian.firstName],
-        ["middle name", guardian.middleName],
-        ["contact number", guardian.contactNumber],
-      ]
+      const requiredGuardianFields: Array<[string, string]> =
+        index === 0
+          ? []
+          : [
+            ["last name", guardian.lastName],
+            ["first name", guardian.firstName],
+            ["contact number", guardian.contactNumber],
+          ];
+      const missingGuardianFields = requiredGuardianFields
         .filter(([, value]) => !value.trim())
         .map(([field]) => field);
 
@@ -314,7 +380,7 @@ function FormContent() {
         return `${label}'s information is missing: ${missingGuardianFields.join(", ")}.`;
       }
 
-      if (!CONTACT_PATTERN.test(guardian.contactNumber)) {
+      if (guardian.contactNumber && !CONTACT_PATTERN.test(guardian.contactNumber)) {
         return `${label}'s contact number must contain exactly 11 digits.`;
       }
 
@@ -327,6 +393,41 @@ function FormContent() {
       if (invalidGuardianName) {
         return `${label}'s ${invalidGuardianName[0]} must contain letters only.`;
       }
+    }
+
+    if (specialNeedsProgram === null) {
+      return "Please answer whether the learner is under the Special Needs Education Program.";
+    }
+
+    if (specialNeedsProgram) {
+      if (!specialNeedsCondition) {
+        return "Please select one diagnosis or manifestation under the Special Needs Education Program.";
+      }
+
+      const requiredDetail = SPECIAL_NEEDS_DETAILS[specialNeedsCondition];
+      if (requiredDetail && !specialNeedsDetail) {
+        return `Please select the required detail for ${specialNeedsCondition}.`;
+      }
+    }
+
+    if (hasPwdId === null) {
+      return "Please answer whether the learner has a PWD ID.";
+    }
+
+    if (lastSchoolId && !/^\d{6}$/.test(lastSchoolId)) {
+      return "School ID must contain exactly 6 digits.";
+    }
+
+    if (!SEMESTER_OPTIONS.includes(semester as (typeof SEMESTER_OPTIONS)[number])) {
+      return "Please select the semester.";
+    }
+
+    if (preferredModalities.length === 0) {
+      return "Please select at least one preferred distance learning modality.";
+    }
+
+    if (!certificationAccepted) {
+      return "Please confirm the certification statement before submitting your application.";
     }
 
     if (!agreedToTerms) {
@@ -374,6 +475,18 @@ function FormContent() {
       selectedCluster,
       isIpCommunity,
       is4psBeneficiary,
+      specialNeedsProgram,
+      specialNeedsGroup: specialNeedsProgram ? specialNeedsGroup : "",
+      specialNeedsCondition: specialNeedsProgram ? specialNeedsCondition : "",
+      specialNeedsDetail: specialNeedsProgram ? specialNeedsDetail : "",
+      hasPwdId,
+      lastGradeLevelCompleted: lastGradeLevelCompleted.trim(),
+      lastSchoolYearCompleted: lastSchoolYearCompleted.trim(),
+      lastSchoolAttended: lastSchoolAttended.trim(),
+      lastSchoolId: lastSchoolId.trim(),
+      semester,
+      preferredModalities: [...preferredModalities],
+      certificationAccepted,
       currentAddress: cleanCurrentAddress,
       permanentAddress: cleanPermanentAddress,
       sameAsCurrentAddress,
@@ -489,7 +602,7 @@ function FormContent() {
       <div
         className="fixed inset-0 bg-cover bg-center opacity-40 brightness-75 pointer-events-none"
         style={{
-          backgroundImage: "url('/school.jpg')",
+          backgroundImage: "url('/school-background.png')",
         }}
       />
 
@@ -714,6 +827,8 @@ function FormContent() {
                   type="date"
                   value={dob}
                   onChange={(e) => setDob(e.target.value)}
+                  min={MIN_BIRTH_DATE}
+                  max={MAX_BIRTH_DATE}
                   required
                 />
 
@@ -1016,11 +1131,12 @@ function FormContent() {
               </h4>
 
               <p className="mb-5 text-xs font-semibold uppercase tracking-wider text-red-600">
-                All parent / guardian details are required. Please complete every field.
+                Mother&apos;s and legal guardian&apos;s details are required. Father&apos;s information and all middle names are optional.
               </p>
 
               <GuardianCard
                 title="Father's Information"
+                optional
                 value={guardians[0]}
                 onChange={(field, value) => handleGuardianChange(0, field, value)}
               />
@@ -1034,6 +1150,260 @@ function FormContent() {
                 value={guardians[2]}
                 onChange={(field, value) => handleGuardianChange(2, field, value)}
               />
+            </section>
+
+            {/* SPECIAL NEEDS EDUCATION PROGRAM */}
+            <section className="mb-10">
+              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
+                5. Special Needs Education Program
+              </h4>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
+                <p className="text-sm font-semibold text-gray-800">
+                  Is the Learner under the Special Needs Education Program?{" "}
+                  <span className="text-red-600">*</span>
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <FormRadio
+                    name="specialNeedsProgram"
+                    label="Yes"
+                    checked={specialNeedsProgram === true}
+                    onChange={() => handleSpecialNeedsAnswer(true)}
+                  />
+                  <FormRadio
+                    name="specialNeedsProgram"
+                    label="No"
+                    checked={specialNeedsProgram === false}
+                    onChange={() => handleSpecialNeedsAnswer(false)}
+                  />
+                </div>
+
+                {specialNeedsProgram === true && (
+                  <div className="mt-6 space-y-6 border-t border-gray-200 pt-6">
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                      If Yes, check only 1, either from a1 or a2.
+                    </p>
+
+                    <div>
+                      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-700">
+                        a1. With Diagnosis from Licensed Medical Specialist
+                      </p>
+                      <div className="grid gap-2.5 sm:grid-cols-2">
+                        {SPECIAL_NEEDS_DIAGNOSES.map((condition) => (
+                          <div key={condition}>
+                            <FormRadio
+                              name="specialNeedsCondition"
+                              label={condition}
+                              checked={specialNeedsCondition === condition}
+                              onChange={() =>
+                                handleSpecialNeedsCondition("diagnosis", condition)
+                              }
+                            />
+                            {specialNeedsCondition === condition &&
+                              SPECIAL_NEEDS_DETAILS[condition] && (
+                                <div className="ml-7 mt-2 flex flex-wrap gap-2.5">
+                                  {SPECIAL_NEEDS_DETAILS[condition].map((detail) => (
+                                    <FormRadio
+                                      key={detail}
+                                      name="specialNeedsDetail"
+                                      label={detail}
+                                      checked={specialNeedsDetail === detail}
+                                      onChange={() => setSpecialNeedsDetail(detail)}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-700">
+                        a2. With Manifestations
+                      </p>
+                      <div className="grid gap-2.5 sm:grid-cols-2">
+                        {SPECIAL_NEEDS_MANIFESTATIONS.map((condition) => (
+                          <FormRadio
+                            key={condition}
+                            name="specialNeedsCondition"
+                            label={condition}
+                            checked={specialNeedsCondition === condition}
+                            onChange={() =>
+                              handleSpecialNeedsCondition("manifestation", condition)
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6 border-t border-gray-200 pt-6">
+                  <p className="text-sm font-semibold text-gray-800">
+                    b. Does the Learner have a PWD ID?{" "}
+                    <span className="text-red-600">*</span>
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <FormRadio
+                      name="hasPwdId"
+                      label="Yes"
+                      checked={hasPwdId === true}
+                      onChange={() => setHasPwdId(true)}
+                    />
+                    <FormRadio
+                      name="hasPwdId"
+                      label="No"
+                      checked={hasPwdId === false}
+                      onChange={() => setHasPwdId(false)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* RETURNING LEARNER / TRANSFER DETAILS */}
+            <section className="mb-10">
+              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
+                6. For Returning Learner (Balik-Aral) and Transfer/Move In
+              </h4>
+              <p className="mb-5 text-xs font-semibold uppercase tracking-wider text-gray-600">
+                Leave blank if not applicable.
+              </p>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
+                <div className="grid gap-5 md:grid-cols-2">
+                  <FormInput
+                    label="LAST GRADE LEVEL COMPLETED"
+                    placeholder="e.g., GRADE 11"
+                    value={lastGradeLevelCompleted}
+                    onChange={(e) =>
+                      setLastGradeLevelCompleted(
+                        keepTextAndNumberCharacters(e.target.value, 50)
+                      )
+                    }
+                    maxLength={50}
+                  />
+                  <FormInput
+                    label="LAST SCHOOL YEAR COMPLETED"
+                    placeholder="e.g., 2025-2026"
+                    value={lastSchoolYearCompleted}
+                    onChange={(e) =>
+                      setLastSchoolYearCompleted(
+                        keepTextAndNumberCharacters(e.target.value, 20)
+                      )
+                    }
+                    maxLength={20}
+                  />
+                  <FormInput
+                    label="LAST SCHOOL ATTENDED"
+                    placeholder="e.g., AASMNHS"
+                    value={lastSchoolAttended}
+                    onChange={(e) =>
+                      setLastSchoolAttended(
+                        keepTextAndNumberCharacters(e.target.value, 150)
+                      )
+                    }
+                    maxLength={150}
+                  />
+                  <FormInput
+                    label="SCHOOL ID"
+                    placeholder="6 digits"
+                    value={lastSchoolId}
+                    onChange={(e) => setLastSchoolId(keepDigits(e.target.value, 6))}
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    title="Enter exactly 6 digits."
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* SENIOR HIGH SCHOOL DETAILS */}
+            <section className="mb-10">
+              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
+                7. For Learner in Senior High School
+              </h4>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
+                <p className="text-sm font-semibold text-gray-800">
+                  Semester <span className="text-red-600">*</span>
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {SEMESTER_OPTIONS.map((option) => (
+                    <FormRadio
+                      key={option}
+                      name="semester"
+                      label={`${option} Semester`}
+                      checked={semester === option}
+                      onChange={() => setSemester(option)}
+                    />
+                  ))}
+                </div>
+
+                <div className="mt-6 grid gap-5 border-t border-gray-200 pt-6 md:grid-cols-2">
+                  <FormInput label="TRACK" value={getTrackLabel(selectedTrack)} readOnly />
+                  <FormInput label="STRAND" value={selectedCluster} readOnly />
+                </div>
+              </div>
+            </section>
+
+            {/* DISTANCE LEARNING MODALITY PREFERENCE */}
+            <section className="mb-10">
+              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
+                8. Distance Learning Modality Preference
+              </h4>
+              <p className="mb-5 text-sm leading-relaxed text-gray-700">
+                If the school will implement other distance learning modalities aside
+                from face-to-face instruction, what would you prefer for your child?
+                Check all that apply. <span className="text-red-600">*</span>
+              </p>
+
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {DISTANCE_LEARNING_MODALITIES.map((modality) => (
+                  <FormCheckbox
+                    key={modality}
+                    label={modality}
+                    checked={preferredModalities.includes(modality)}
+                    onChange={() => toggleModality(modality)}
+                  />
+                ))}
+              </div>
+            </section>
+
+            {/* CERTIFICATION */}
+            <section className="mb-10">
+              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
+                Certification
+              </h4>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
+                <p className="text-sm leading-relaxed text-gray-700">
+                  I hereby certify that the above information given are true and correct
+                  to the best of my knowledge and I allow the Department of Education to
+                  use my child&apos;s details to create and/or update his/her learner
+                  profile in the Learner Information System.
+                </p>
+                <p className="mt-3 text-xs leading-relaxed text-gray-600">
+                  The information herein shall be treated as confidential in compliance
+                  with the Data Privacy Act of 2012.
+                </p>
+
+                <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3.5">
+                  <input
+                    type="checkbox"
+                    checked={certificationAccepted}
+                    disabled={isSubmitting}
+                    onChange={(e) => setCertificationAccepted(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-emerald-700 focus:ring-1 focus:ring-yellow-300"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    I certify and agree to the statement above.{" "}
+                    <span className="text-red-600">*</span>
+                  </span>
+                </label>
+              </div>
             </section>
 
             {/* SUBMISSION / RLS NOTICE */}
@@ -1236,6 +1606,8 @@ function FormInput({
   disabled = false,
   inputMode,
   pattern,
+  min,
+  max,
   minLength,
   maxLength,
   title,
@@ -1252,6 +1624,8 @@ function FormInput({
   disabled?: boolean;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   pattern?: string;
+  min?: string;
+  max?: string;
   minLength?: number;
   maxLength?: number;
   title?: string;
@@ -1274,11 +1648,13 @@ function FormInput({
         disabled={disabled}
         inputMode={inputMode}
         pattern={pattern}
+        min={min}
+        max={max}
         minLength={minLength}
         maxLength={maxLength}
         title={title}
         autoComplete={autoComplete}
-        autoCapitalize={type === "text" ? "words" : undefined}
+        autoCapitalize={type === "text" ? "characters" : undefined}
         className="portal-input"
       />
     </div>
@@ -1309,6 +1685,37 @@ function FormCheckbox({
       <span className="text-sm font-medium text-gray-700 transition group-hover:text-gray-900">
         {label}
       </span>
+      </label>
+  );
+}
+
+/* ============================================================= */
+/* REUSABLE FORM RADIO                                           */
+/* ============================================================= */
+
+function FormRadio({
+  name,
+  label,
+  checked = false,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  checked?: boolean;
+  onChange?: () => void;
+}) {
+  return (
+    <label className="group inline-flex cursor-pointer items-start gap-2.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 transition hover:border-emerald-300 hover:bg-emerald-50/40">
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        onChange={() => onChange?.()}
+        className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-emerald-700 focus:ring-1 focus:ring-yellow-300"
+      />
+      <span className="text-sm font-medium text-gray-700 transition group-hover:text-gray-900">
+        {label}
+      </span>
     </label>
   );
 }
@@ -1319,17 +1726,19 @@ function FormCheckbox({
 
 function GuardianCard({
   title,
+  optional = false,
   value,
   onChange,
 }: {
   title: string;
+  optional?: boolean;
   value: GuardianState;
   onChange: (field: keyof GuardianState, value: string) => void;
 }) {
   return (
     <div className="mb-5 rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
       <h5 className="mb-4 text-xs font-bold uppercase tracking-wider text-emerald-700">
-        {title}
+        {title} {optional && <span className="text-gray-500">(OPTIONAL)</span>}
       </h5>
 
       <div className="grid gap-5 md:grid-cols-3">
@@ -1338,7 +1747,7 @@ function GuardianCard({
           placeholder="Dela Cruz"
           value={value.lastName}
           onChange={(e) => onChange("lastName", keepNameCharacters(e.target.value))}
-          required
+          required={!optional}
           minLength={2}
           maxLength={100}
         />
@@ -1347,7 +1756,7 @@ function GuardianCard({
           placeholder="Juan"
           value={value.firstName}
           onChange={(e) => onChange("firstName", keepNameCharacters(e.target.value))}
-          required
+          required={!optional}
           minLength={2}
           maxLength={100}
         />
@@ -1356,7 +1765,6 @@ function GuardianCard({
           placeholder="Santos"
           value={value.middleName}
           onChange={(e) => onChange("middleName", keepNameCharacters(e.target.value))}
-          required
           maxLength={100}
         />
 
@@ -1367,7 +1775,7 @@ function GuardianCard({
             placeholder="e.g., 09123456789"
             value={value.contactNumber}
             onChange={(e) => onChange("contactNumber", keepDigits(e.target.value, 11))}
-            required
+            required={!optional}
             inputMode="numeric"
             pattern="[0-9]{11}"
             minLength={11}

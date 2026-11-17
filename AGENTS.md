@@ -49,11 +49,11 @@ Required/used:
 ## Key Files & Entry Points
 - App: `app/page.tsx`, `app/enroll/page.tsx`, `app/form/page.tsx`, `app/requirements/page.tsx`, `app/enroll/account/page.tsx`, `app/login/page.tsx`
 - Login/MFA: `app/login/page.tsx`, `app/login/_components/*`, `app/admin/security/*`, `app/staff/forgot-password/page.tsx`
-- Staff: `app/staff/dashboard/page.tsx`, `app/staff/dashboard/status/page.tsx`, `app/staff/dashboard/sections/page.tsx`, `app/staff/reset-password/page.tsx`
+- Staff: `app/staff/dashboard/page.tsx`, `app/staff/dashboard/applications/page.tsx` (application review, requirements, and status updates beside each record), `app/staff/dashboard/sections/page.tsx`, `app/staff/dashboard/reports/page.tsx`, `app/staff/reset-password/page.tsx`
 - API: `app/api/submit-application/route.ts`, `app/api/send-account/route.ts`, `app/api/verify-recaptcha/route.ts`, `app/api/auth/mfa/{send,verify,logout}/route.ts`
 - Auth: `lib/auth/{server,roles,adminAuth,mfa,mfaCookie,mfaToken}.ts`, `lib/mailer.ts`, `proxy.ts`
-- Lib: `lib/supabaseClient.ts`, `lib/supabase/client.ts`
-- DB: `supabase/schema.sql`, `supabase/unified_login_mfa_migration.sql`
+- Lib: `lib/supabaseClient.ts`, `lib/supabase/client.ts`, `lib/enrollmentFormOptions.ts`
+- DB: `supabase/schema.sql`, `supabase/unified_login_mfa_migration.sql`, `supabase/add_enrollment_profile_fields_migration.sql`
 - Config: `tsconfig.json` (strict, moduleResolution bundler, jsx react-jsx), `eslint.config.mjs` (next config), `postcss.config.mjs`
 
 ## Gotchas for Agents

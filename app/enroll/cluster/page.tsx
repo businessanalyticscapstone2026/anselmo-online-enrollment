@@ -20,14 +20,14 @@ import {
 const emptySubscribe = () => () => { };
 
 const CLUSTER_BACKGROUNDS: Record<string, string> = {
-  STEM: "/school.jpg",
-  "Business & Entrepreneurship": "/school-background.png",
-  "Arts, Social Sciences & Humanities": "/school.jpg",
-  "Sports, Health & Wellness": "/school-background.png",
-  "Construction & Building Technology": "/school.jpg",
-  "Industrial Technology": "/school-background.png",
-  "Hospitality & Tourism": "/school.jpg",
-  "ICT Support": "/school-background.png",
+  STEM: "/stem.png",
+  "Business & Entrepreneurship": "/business%20and%20entreprenuership.png",
+  "Arts, Social Sciences & Humanities": "/art,%20social%20sciences%20%26%20humanities.png",
+  "Sports, Health & Wellness": "/sports,%20health%20%26%20wellness.png",
+  "Construction & Building Technology": "/construction%20%26%20building%20technology.png",
+  "Industrial Technology": "/industrial%20technology.png",
+  "Hospitality & Tourism": "/hospitality%20%26%20tourism.png",
+  "ICT Support": "/ict%20support.png",
 };
 
 const CLUSTER_BACKGROUND_POSITIONS: Record<string, string> = {
@@ -41,7 +41,7 @@ const CLUSTER_BACKGROUND_POSITIONS: Record<string, string> = {
   "ICT Support": "center 55%",
 };
 
-const DEFAULT_CLUSTER_BACKGROUND = "/school.jpg";
+const DEFAULT_CLUSTER_BACKGROUND = "/school-background.png";
 
 function ClusterContent() {
   const router = useRouter();
@@ -105,7 +105,7 @@ function ClusterContent() {
       <div
         className="fixed inset-0 bg-cover bg-center opacity-40 brightness-75 pointer-events-none"
         style={{
-          backgroundImage: "url('/school.jpg')",
+          backgroundImage: "url('/school-background.png')",
         }}
       />
 
@@ -200,11 +200,11 @@ function ClusterContent() {
                   />
                   <div
                     className={`absolute inset-0 transition-colors duration-300 ${isSelected
-                      ? "bg-[#052e1c]/80"
-                      : "bg-[#052e1c]/85 group-hover:bg-[#052e1c]/80"
+                      ? "bg-[#052e1c]/60"
+                      : "bg-[#052e1c]/65 group-hover:bg-[#052e1c]/55"
                       }`}
                   />
-                  <div className="absolute inset-0 bg-linear-to-t from-[#031f13] via-[#052e1c]/30 to-transparent" />
+                  <div className="absolute inset-0 bg-linear-to-t from-[#031f13]/90 via-[#052e1c]/20 to-transparent" />
 
                   <div className="relative flex flex-1 flex-col">
                     <div className="flex justify-end">

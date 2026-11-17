@@ -1,3 +1,5 @@
+import { statSync } from "node:fs";
+import path from "node:path";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -15,6 +17,16 @@ import {
 } from "@/lib/enrollmentSettings";
 
 export const dynamic = "force-dynamic";
+
+function imageVersion(fileName: string): string {
+  try {
+    return String(
+      Math.floor(statSync(path.join(process.cwd(), "public", fileName)).mtimeMs)
+    );
+  } catch {
+    return "1";
+  }
+}
 
 async function loadEnrollmentSettings(): Promise<EnrollmentSettings | null> {
   try {
@@ -98,7 +110,7 @@ export default async function Home() {
       <div
         className="fixed inset-0 bg-cover bg-center opacity-30 brightness-75"
         style={{
-          backgroundImage: "url('/school.jpg')",
+          backgroundImage: "url('/school-background.png')",
         }}
       />
       <div className="fixed inset-0 bg-linear-to-b from-[#0b3d2e]/80 via-[#0b3d2e]/70 to-[#052e1c]/90" />
@@ -246,9 +258,10 @@ export default async function Home() {
               <div className="overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm">
                 <div className="relative h-44 w-full sm:h-52">
                   <Image
-                    src="/school.jpg"
-                    alt="AASMNHS campus"
+                    src={`/vision.jpg?v=${imageVersion("vision.jpg")}`}
+                    alt="AASMNHS vision"
                     fill
+                    unoptimized
                     className="object-cover"
                     sizes="(max-width: 768px) 100vw, 50vw"
                   />
@@ -269,9 +282,10 @@ export default async function Home() {
               <div className="overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm">
                 <div className="relative h-44 w-full sm:h-52">
                   <Image
-                    src="/school-background.png"
-                    alt="AASMNHS learning environment"
+                    src={`/mission.jpg?v=${imageVersion("mission.jpg")}`}
+                    alt="AASMNHS mission"
                     fill
+                    unoptimized
                     className="object-cover"
                     sizes="(max-width: 768px) 100vw, 50vw"
                   />
@@ -293,9 +307,10 @@ export default async function Home() {
               <div className="overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm md:col-span-2 md:mx-auto md:w-full md:max-w-[calc(50%-0.75rem)]">
                 <div className="relative h-44 w-full sm:h-52">
                   <Image
-                    src="/school-background.png"
+                    src={`/core%20values.jpg?v=${imageVersion("core values.jpg")}`}
                     alt="AASMNHS core values"
                     fill
+                    unoptimized
                     className="object-cover"
                     sizes="(max-width: 768px) 100vw, 50vw"
                   />

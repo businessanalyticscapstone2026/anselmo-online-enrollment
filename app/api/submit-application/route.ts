@@ -7,6 +7,13 @@ import {
   type EnrollmentSettings,
 } from "@/lib/enrollmentSettings";
 import { getTrackConfig, isValidClusterForTrack } from "@/lib/clusters";
+import {
+  DISTANCE_LEARNING_MODALITIES,
+  SEMESTER_OPTIONS,
+  SPECIAL_NEEDS_DETAILS,
+  SPECIAL_NEEDS_DIAGNOSES,
+  SPECIAL_NEEDS_MANIFESTATIONS,
+} from "@/lib/enrollmentFormOptions";
 import { logActivity } from "@/lib/activityLog";
 import { joinNameParts } from "@/lib/accountNames";
 import {
@@ -15,6 +22,25 @@ import {
 } from "@/lib/studentProfiles";
 
 export const runtime = "nodejs";
+
+const MAX_BIRTH_DATE = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  .toISOString()
+  .slice(0, 10);
+const CURRENT_YEAR = Number(MAX_BIRTH_DATE.slice(0, 4));
+const MIN_BIRTH_YEAR = CURRENT_YEAR - 30;
+const MIN_BIRTH_DATE = `${MIN_BIRTH_YEAR}-01-01`;
+
+const GUARDIAN_LABELS = ["Father", "Mother", "Legal Guardian"];
+const REQUIRED_GUARDIAN_FIELDS: Array<[keyof ReturnType<typeof guardianValue>, string]> = [
+  ["lastName", "last name"],
+  ["firstName", "first name"],
+  ["contactNumber", "contact number"],
+];
+const GUARDIAN_NAME_FIELDS: Array<[keyof ReturnType<typeof guardianValue>, string]> = [
+  ["lastName", "last name"],
+  ["firstName", "first name"],
+  ["middleName", "middle name"],
+];
 
 type Address = {
   houseNo?: unknown;
@@ -66,6 +92,10 @@ function guardianValue(value: unknown): Record<string, string> {
     middleName: textValue(guardian.middleName, 100),
     contactNumber: textValue(guardian.contactNumber, 30),
   };
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return value === true ? true : value === false ? false : null;
 }
 
 function formatAddress(address: Record<string, string>): string {
@@ -250,6 +280,32 @@ export async function POST(request: NextRequest) {
     const is4psBeneficiary = data.is4psBeneficiary === true;
     const sameAsCurrentAddress = data.sameAsCurrentAddress === true;
 
+    const specialNeedsProgram = booleanOrNull(data.specialNeedsProgram);
+    let specialNeedsGroup = textValue(data.specialNeedsGroup, 20);
+    let specialNeedsCondition = textValue(data.specialNeedsCondition, 150);
+    let specialNeedsDetail = textValue(data.specialNeedsDetail, 50);
+    const hasPwdId = booleanOrNull(data.hasPwdId);
+    const lastGradeLevelCompleted = textValue(data.lastGradeLevelCompleted, 50);
+    const lastSchoolYearCompleted = textValue(data.lastSchoolYearCompleted, 20);
+    const lastSchoolAttended = textValue(data.lastSchoolAttended, 150);
+    const lastSchoolId = textValue(data.lastSchoolId, 6);
+    const semester = textValue(data.semester, 10);
+    const rawModalities = Array.isArray(data.preferredModalities)
+      ? data.preferredModalities
+      : [];
+    const preferredModalities = [
+      ...new Set(
+        rawModalities
+          .map((value) => textValue(value, 60))
+          .filter((value) =>
+            DISTANCE_LEARNING_MODALITIES.includes(
+              value as (typeof DISTANCE_LEARNING_MODALITIES)[number]
+            )
+          )
+      ),
+    ];
+    const certificationAccepted = data.certificationAccepted === true;
+
     if (!firstName || !lastName || !email) {
       return NextResponse.json(
         { success: false, message: "First name, last name, and email address are required." },
@@ -277,10 +333,20 @@ export async function POST(request: NextRequest) {
     if (
       Number.isNaN(parsedBirthDate.getTime()) ||
       parsedBirthDate.toISOString().slice(0, 10) !== birthDate ||
-      parsedBirthDate > new Date()
+      birthDate > MAX_BIRTH_DATE
     ) {
       return NextResponse.json(
         { success: false, message: "Please provide a valid date of birth." },
+        { status: 400 }
+      );
+    }
+
+    if (birthDate < MIN_BIRTH_DATE || birthDate > MAX_BIRTH_DATE) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Birth date must be between ${MIN_BIRTH_YEAR} and ${CURRENT_YEAR}.`,
+        },
         { status: 400 }
       );
     }
@@ -426,64 +492,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const submittedGuardians = Array.isArray(data.guardians)
-      ? data.guardians.slice(0, 3).map(guardianValue)
-      : [];
+    const rawGuardians = Array.isArray(data.guardians) ? data.guardians : [];
+    const submittedGuardians = GUARDIAN_LABELS.map((_, index) =>
+      guardianValue(rawGuardians[index])
+    );
 
-    const guardianLabels = ["Father", "Mother", "Legal Guardian"];
-    const guardianFieldLabels: Array<[keyof ReturnType<typeof guardianValue>, string]> = [
-      ["lastName", "last name"],
-      ["firstName", "first name"],
-      ["middleName", "middle name"],
-      ["contactNumber", "contact number"],
-    ];
-
-    for (let i = 0; i < guardianLabels.length; i++) {
+    for (let i = 0; i < GUARDIAN_LABELS.length; i++) {
       const guardian = submittedGuardians[i];
+      const label = GUARDIAN_LABELS[i];
 
-      if (!guardian) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `${guardianLabels[i]}'s information is required. Please complete the Parent's / Guardian Information section.`,
-          },
-          { status: 400 }
-        );
-      }
-
-      const missingFields = guardianFieldLabels
+      const requiredFields =
+        i === 0 ? [] : REQUIRED_GUARDIAN_FIELDS;
+      const missingFields = requiredFields
         .filter(([field]) => !guardian[field])
-        .map(([, label]) => label);
+        .map(([, fieldLabel]) => fieldLabel);
 
       if (missingFields.length > 0) {
         return NextResponse.json(
           {
             success: false,
-            message: `${guardianLabels[i]}'s information is missing the required field(s): ${missingFields.join(", ")}.`,
+            message: `${label}'s information is missing the required field(s): ${missingFields.join(", ")}.`,
           },
           { status: 400 }
         );
       }
 
-      if (!isValidContactNumber(guardian.contactNumber)) {
+      if (guardian.contactNumber && !isValidContactNumber(guardian.contactNumber)) {
         return NextResponse.json(
           {
             success: false,
-            message: `${guardianLabels[i]}'s contact number must contain exactly 11 digits.`,
+            message: `${label}'s contact number must contain exactly 11 digits.`,
           },
           { status: 400 }
         );
       }
 
-      const guardianTextField = guardianFieldLabels.find(
-        ([field]) => field !== "contactNumber" && containsDigit(guardian[field])
+      const guardianTextField = GUARDIAN_NAME_FIELDS.find(([field]) =>
+        containsDigit(guardian[field])
       );
 
       if (guardianTextField) {
         return NextResponse.json(
           {
             success: false,
-            message: `${guardianLabels[i]}'s ${guardianTextField[1]} must contain letters only.`,
+            message: `${label}'s ${guardianTextField[1]} must contain letters only.`,
           },
           { status: 400 }
         );
@@ -497,6 +549,113 @@ export async function POST(request: NextRequest) {
         middleName: "",
         contactNumber: "",
       });
+    }
+
+    const allowedSpecialNeedsConditions: string[] = [
+      ...SPECIAL_NEEDS_DIAGNOSES,
+      ...SPECIAL_NEEDS_MANIFESTATIONS,
+    ];
+
+    if (specialNeedsProgram === null) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please answer whether the learner is under the Special Needs Education Program.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (specialNeedsProgram) {
+      if (
+        !specialNeedsCondition ||
+        !allowedSpecialNeedsConditions.includes(specialNeedsCondition)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Please select one valid diagnosis or manifestation under the Special Needs Education Program.",
+          },
+          { status: 400 }
+        );
+      }
+
+      specialNeedsGroup = SPECIAL_NEEDS_DIAGNOSES.includes(
+        specialNeedsCondition as (typeof SPECIAL_NEEDS_DIAGNOSES)[number]
+      )
+        ? "diagnosis"
+        : "manifestation";
+
+      const requiredDetails = SPECIAL_NEEDS_DETAILS[specialNeedsCondition];
+      if (requiredDetails) {
+        if (!requiredDetails.includes(specialNeedsDetail)) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Please select the required detail for ${specialNeedsCondition}.`,
+            },
+            { status: 400 }
+          );
+        }
+      } else {
+        specialNeedsDetail = "";
+      }
+    } else {
+      specialNeedsGroup = "";
+      specialNeedsCondition = "";
+      specialNeedsDetail = "";
+    }
+
+    if (hasPwdId === null) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Please answer whether the learner has a PWD ID.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (lastSchoolId && !/^\d{6}$/.test(lastSchoolId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "School ID must contain exactly 6 digits.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !SEMESTER_OPTIONS.includes(semester as (typeof SEMESTER_OPTIONS)[number])
+    ) {
+      return NextResponse.json(
+        { success: false, message: "Please select the semester." },
+        { status: 400 }
+      );
+    }
+
+    if (preferredModalities.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Please select at least one preferred distance learning modality.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!certificationAccepted) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please confirm the certification statement before submitting your application.",
+        },
+        { status: 400 }
+      );
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -607,6 +766,18 @@ export async function POST(request: NextRequest) {
       selected_cluster: selectedCluster,
       is_ip_community: isIpCommunity,
       is_4ps_beneficiary: is4psBeneficiary,
+      special_needs_program: specialNeedsProgram,
+      special_needs_group: specialNeedsGroup || null,
+      special_needs_condition: specialNeedsCondition || null,
+      special_needs_detail: specialNeedsDetail || null,
+      has_pwd_id: hasPwdId,
+      last_grade_level_completed: lastGradeLevelCompleted || null,
+      last_school_year_completed: lastSchoolYearCompleted || null,
+      last_school_attended: lastSchoolAttended || null,
+      last_school_id: lastSchoolId || null,
+      semester,
+      preferred_distance_modalities: preferredModalities,
+      certification_accepted: certificationAccepted,
       current_address: currentAddress,
       permanent_address: permanentAddress,
       same_as_current_address: sameAsCurrentAddress,
@@ -636,6 +807,18 @@ export async function POST(request: NextRequest) {
       contact_number: contactNumber || null,
       is_ip_community: isIpCommunity,
       is_4ps_beneficiary: is4psBeneficiary,
+      special_needs_program: specialNeedsProgram,
+      special_needs_group: specialNeedsGroup || null,
+      special_needs_condition: specialNeedsCondition || null,
+      special_needs_detail: specialNeedsDetail || null,
+      has_pwd_id: hasPwdId,
+      last_grade_level_completed: lastGradeLevelCompleted || null,
+      last_school_year_completed: lastSchoolYearCompleted || null,
+      last_school_attended: lastSchoolAttended || null,
+      last_school_id: lastSchoolId || null,
+      semester,
+      preferred_distance_modalities: preferredModalities,
+      certification_accepted: certificationAccepted,
       track: selectedTrack || null,
       selected_cluster: selectedCluster || null,
       strand: selectedCluster || null,

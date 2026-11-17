@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Files,
   Users,
-  ClipboardCheck,
   FileSpreadsheet,
   LogOut,
   Menu,
@@ -33,11 +32,6 @@ const navItems = [
     href: "/staff/dashboard/sections",
     label: "Section & Adviser",
     icon: Users,
-  },
-  {
-    href: "/staff/dashboard/status",
-    label: "Update Status",
-    icon: ClipboardCheck,
   },
   {
     href: "/staff/dashboard/reports",

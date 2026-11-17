@@ -192,7 +192,7 @@ export default function RequirementsPage() {
             <div
                 className="fixed inset-0 bg-cover bg-center opacity-40 brightness-75 pointer-events-none"
                 style={{
-                    backgroundImage: "url('/school.jpg')",
+                    backgroundImage: "url('/school-background.png')",
                 }}
             />
 
