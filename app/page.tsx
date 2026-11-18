@@ -47,11 +47,11 @@ async function loadEnrollmentSettings(): Promise<EnrollmentSettings | null> {
 const enrollmentSteps = [
   {
     step: "1",
-    title: "Choose Your Track",
+    title: "Choose Your Track and Cluster",
     description:
-      "Select the Senior High School track that fits your goals and preferred elective cluster.",
+      "Select the Senior High School track that fits your goals and choose preferred elective cluster.",
     icon: Target,
-    image: "/school.jpg",
+    image: "/choose%20track%20and%20cluster.jpg",
   },
   {
     step: "2",
@@ -59,7 +59,7 @@ const enrollmentSteps = [
     description:
       "Provide your personal information and learner details in the online enrollment form.",
     icon: ClipboardList,
-    image: "/school-background.png",
+    image: "/fill%20out%20the%20form.jpg",
   },
   {
     step: "3",
@@ -67,7 +67,7 @@ const enrollmentSteps = [
     description:
       "Submit clear copies of your required documents to complete your application.",
     icon: FileUp,
-    image: "/school.jpg",
+    image: "/upload%20requirements.jpg",
   },
   {
     step: "4",
@@ -75,7 +75,7 @@ const enrollmentSteps = [
     description:
       "Receive your account credentials by email, then sign in to track your enrollment status.",
     icon: LogIn,
-    image: "/school-logo-trimmed.png",
+    image: "/get%20account%20%26%20sign%20in.jpg",
   },
 ];
 
@@ -367,15 +367,12 @@ export default async function Home() {
                     key={item.step}
                     className="group overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm transition hover:-translate-y-1 hover:border-yellow-400/40"
                   >
-                    <div className="relative h-36 w-full">
+                    <div className="relative aspect-[945/2048] w-full">
                       <Image
                         src={item.image}
                         alt={item.title}
                         fill
-                        className={`object-cover transition duration-300 group-hover:scale-105 ${item.image.includes("logo")
-                          ? "bg-emerald-900/40 object-contain p-6"
-                          : ""
-                          }`}
+                        className="object-cover transition duration-300 group-hover:scale-105"
                         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                       />
                       <div className="absolute inset-0 bg-linear-to-t from-[#052e1c]/80 via-[#052e1c]/20 to-transparent" />
