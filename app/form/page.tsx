@@ -852,8 +852,8 @@ function FormContent() {
                         <label
                           key={option.value}
                           className={`flex cursor-pointer items-center justify-center gap-2.5 rounded-xl border-2 px-4 py-3.5 text-sm font-semibold transition ${selected
-                              ? "border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm"
-                              : "border-gray-300 bg-white text-gray-700 hover:border-emerald-300 hover:bg-emerald-50/40"
+                            ? "border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm"
+                            : "border-gray-300 bg-white text-gray-700 hover:border-emerald-300 hover:bg-emerald-50/40"
                             }`}
                         >
                           <input
@@ -867,8 +867,8 @@ function FormContent() {
                           />
                           <span
                             className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${selected
-                                ? "border-emerald-600"
-                                : "border-gray-400"
+                              ? "border-emerald-600"
+                              : "border-gray-400"
                               }`}
                           >
                             {selected && (
@@ -1146,7 +1146,7 @@ function FormContent() {
             {/* SPECIAL NEEDS EDUCATION PROGRAM */}
             <section className="mb-10">
               <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
-                5. Special Needs Education Program
+                Special Needs Education Program
               </h4>
 
               <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
@@ -1256,7 +1256,7 @@ function FormContent() {
             {/* RETURNING LEARNER / TRANSFER DETAILS */}
             <section className="mb-10">
               <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
-                6. For Returning Learner (Balik-Aral) and Transfer/Move In
+                For Returning Learner (Balik-Aral) and Transfer/Move In
               </h4>
               <p className="mb-5 text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Leave blank if not applicable.
@@ -1303,7 +1303,7 @@ function FormContent() {
             {/* DISTANCE LEARNING MODALITY PREFERENCE */}
             <section className="mb-10">
               <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
-                8. Distance Learning Modality Preference
+                Distance Learning Modality Preference
               </h4>
               <p className="mb-5 text-sm leading-relaxed text-gray-700">
                 If the school will implement other distance learning modalities aside
@@ -1636,7 +1636,7 @@ function FormCheckbox({
       <span className="text-sm font-medium text-gray-700 transition group-hover:text-gray-900">
         {label}
       </span>
-      </label>
+    </label>
   );
 }
 
