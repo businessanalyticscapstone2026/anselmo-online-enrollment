@@ -2,7 +2,7 @@
 -- Run this once in the Supabase SQL editor.
 --
 -- This only fixes the "Email not confirmed" sign-in error. Students who do
--- not know their temporary password should use the Forgot Password flow.
+-- not know their password should use the Forgot Password flow.
 
 UPDATE auth.users
 SET email_confirmed_at = COALESCE(email_confirmed_at, now()),

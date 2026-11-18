@@ -218,7 +218,7 @@ export default function AccountPage() {
                 </div>
 
                 <p className="mt-1 text-sm leading-6 text-gray-600">
-                  Your official portal login credentials, including your temporary password, have been sent to your registered email address.
+                  Your official portal login credentials, including your password, have been sent to your registered email address.
                 </p>
 
                 {/* Email Box */}
@@ -267,9 +267,9 @@ export default function AccountPage() {
 
             <ul className="mt-2 space-y-1.5 text-xs sm:text-sm leading-6 text-amber-800">
               <li>• Check your email inbox and spam folder for the account confirmation notice.</li>
-              <li>• Your temporary password is only sent to your registered email and is never shown on this page.</li>
-              <li>• Keep your temporary password confidential and do not share it with others.</li>
-              <li>• You will be prompted to change this temporary password upon your first sign in.</li>
+              <li>• Your password is only sent to your registered email and is never shown on this page.</li>
+              <li>• Keep your password confidential and do not share it with others.</li>
+              <li>• You will be prompted to change this password upon your first sign in.</li>
             </ul>
           </div>
 
@@ -283,7 +283,7 @@ export default function AccountPage() {
               <StatusItem
                 number="1"
                 title="Application & Credentials Dispatched"
-                description="Your enrollment information has been recorded and temporary login credentials sent by email."
+                description="Your enrollment information has been recorded and login credentials sent by email."
                 completed
               />
               <StatusItem

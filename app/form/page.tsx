@@ -14,7 +14,6 @@ import {
 } from "@/lib/clusters";
 import {
   DISTANCE_LEARNING_MODALITIES,
-  SEMESTER_OPTIONS,
   SPECIAL_NEEDS_DETAILS,
   SPECIAL_NEEDS_DIAGNOSES,
   SPECIAL_NEEDS_MANIFESTATIONS,
@@ -160,13 +159,11 @@ function FormContent() {
   const [hasPwdId, setHasPwdId] = useState<boolean | null>(null);
 
   // Returning learner / transfer details
-  const [lastGradeLevelCompleted, setLastGradeLevelCompleted] = useState("");
   const [lastSchoolYearCompleted, setLastSchoolYearCompleted] = useState("");
   const [lastSchoolAttended, setLastSchoolAttended] = useState("");
   const [lastSchoolId, setLastSchoolId] = useState("");
 
-  // Senior high school details
-  const [semester, setSemester] = useState("");
+  // Distance learning modality preference
   const [preferredModalities, setPreferredModalities] = useState<string[]>([]);
   const [certificationAccepted, setCertificationAccepted] = useState(false);
 
@@ -418,10 +415,6 @@ function FormContent() {
       return "School ID must contain exactly 6 digits.";
     }
 
-    if (!SEMESTER_OPTIONS.includes(semester as (typeof SEMESTER_OPTIONS)[number])) {
-      return "Please select the semester.";
-    }
-
     if (preferredModalities.length === 0) {
       return "Please select at least one preferred distance learning modality.";
     }
@@ -480,11 +473,9 @@ function FormContent() {
       specialNeedsCondition: specialNeedsProgram ? specialNeedsCondition : "",
       specialNeedsDetail: specialNeedsProgram ? specialNeedsDetail : "",
       hasPwdId,
-      lastGradeLevelCompleted: lastGradeLevelCompleted.trim(),
       lastSchoolYearCompleted: lastSchoolYearCompleted.trim(),
       lastSchoolAttended: lastSchoolAttended.trim(),
       lastSchoolId: lastSchoolId.trim(),
-      semester,
       preferredModalities: [...preferredModalities],
       certificationAccepted,
       currentAddress: cleanCurrentAddress,
@@ -1274,17 +1265,6 @@ function FormContent() {
               <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
                 <div className="grid gap-5 md:grid-cols-2">
                   <FormInput
-                    label="LAST GRADE LEVEL COMPLETED"
-                    placeholder="e.g., GRADE 11"
-                    value={lastGradeLevelCompleted}
-                    onChange={(e) =>
-                      setLastGradeLevelCompleted(
-                        keepTextAndNumberCharacters(e.target.value, 50)
-                      )
-                    }
-                    maxLength={50}
-                  />
-                  <FormInput
                     label="LAST SCHOOL YEAR COMPLETED"
                     placeholder="e.g., 2025-2026"
                     value={lastSchoolYearCompleted}
@@ -1316,35 +1296,6 @@ function FormContent() {
                     maxLength={6}
                     title="Enter exactly 6 digits."
                   />
-                </div>
-              </div>
-            </section>
-
-            {/* SENIOR HIGH SCHOOL DETAILS */}
-            <section className="mb-10">
-              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
-                7. For Learner in Senior High School
-              </h4>
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
-                <p className="text-sm font-semibold text-gray-800">
-                  Semester <span className="text-red-600">*</span>
-                </p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {SEMESTER_OPTIONS.map((option) => (
-                    <FormRadio
-                      key={option}
-                      name="semester"
-                      label={`${option} Semester`}
-                      checked={semester === option}
-                      onChange={() => setSemester(option)}
-                    />
-                  ))}
-                </div>
-
-                <div className="mt-6 grid gap-5 border-t border-gray-200 pt-6 md:grid-cols-2">
-                  <FormInput label="TRACK" value={getTrackLabel(selectedTrack)} readOnly />
-                  <FormInput label="STRAND" value={selectedCluster} readOnly />
                 </div>
               </div>
             </section>

@@ -9,7 +9,6 @@ import {
 import { getTrackConfig, isValidClusterForTrack } from "@/lib/clusters";
 import {
   DISTANCE_LEARNING_MODALITIES,
-  SEMESTER_OPTIONS,
   SPECIAL_NEEDS_DETAILS,
   SPECIAL_NEEDS_DIAGNOSES,
   SPECIAL_NEEDS_MANIFESTATIONS,
@@ -112,8 +111,8 @@ function formatAddress(address: Record<string, string>): string {
     .join(", ");
 }
 
-function generateTemporaryPassword(): string {
-  // Short, easy-to-memorize one-time password; never log or return it in the API response.
+function generatePassword(): string {
+  // Short, easy-to-memorize password; never log or return it in the API response.
   const digits = String(randomInt(0, 1_000_000)).padStart(6, "0");
   return `AASMNHS - ${digits}`;
 }
@@ -285,11 +284,9 @@ export async function POST(request: NextRequest) {
     let specialNeedsCondition = textValue(data.specialNeedsCondition, 150);
     let specialNeedsDetail = textValue(data.specialNeedsDetail, 50);
     const hasPwdId = booleanOrNull(data.hasPwdId);
-    const lastGradeLevelCompleted = textValue(data.lastGradeLevelCompleted, 50);
     const lastSchoolYearCompleted = textValue(data.lastSchoolYearCompleted, 20);
     const lastSchoolAttended = textValue(data.lastSchoolAttended, 150);
     const lastSchoolId = textValue(data.lastSchoolId, 6);
-    const semester = textValue(data.semester, 10);
     const rawModalities = Array.isArray(data.preferredModalities)
       ? data.preferredModalities
       : [];
@@ -628,15 +625,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      !SEMESTER_OPTIONS.includes(semester as (typeof SEMESTER_OPTIONS)[number])
-    ) {
-      return NextResponse.json(
-        { success: false, message: "Please select the semester." },
-        { status: 400 }
-      );
-    }
-
     if (preferredModalities.length === 0) {
       return NextResponse.json(
         {
@@ -700,13 +688,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const temporaryPassword = generateTemporaryPassword();
+    const password = generatePassword();
 
     // Auth account is created server-side. Duplicate email is handled by Supabase Auth.
     const { data: authData, error: authError } =
       await supabase.auth.admin.createUser({
         email,
-        password: temporaryPassword,
+        password,
         email_confirm: true,
         user_metadata: {
           full_name: studentFullName,
@@ -771,11 +759,9 @@ export async function POST(request: NextRequest) {
       special_needs_condition: specialNeedsCondition || null,
       special_needs_detail: specialNeedsDetail || null,
       has_pwd_id: hasPwdId,
-      last_grade_level_completed: lastGradeLevelCompleted || null,
       last_school_year_completed: lastSchoolYearCompleted || null,
       last_school_attended: lastSchoolAttended || null,
       last_school_id: lastSchoolId || null,
-      semester,
       preferred_distance_modalities: preferredModalities,
       certification_accepted: certificationAccepted,
       current_address: currentAddress,
@@ -812,11 +798,9 @@ export async function POST(request: NextRequest) {
       special_needs_condition: specialNeedsCondition || null,
       special_needs_detail: specialNeedsDetail || null,
       has_pwd_id: hasPwdId,
-      last_grade_level_completed: lastGradeLevelCompleted || null,
       last_school_year_completed: lastSchoolYearCompleted || null,
       last_school_attended: lastSchoolAttended || null,
       last_school_id: lastSchoolId || null,
-      semester,
       preferred_distance_modalities: preferredModalities,
       certification_accepted: certificationAccepted,
       track: selectedTrack || null,
@@ -963,7 +947,7 @@ export async function POST(request: NextRequest) {
           "",
           "Your online enrollment application has been saved.",
           `Email: ${email}`,
-          `Temporary password: ${temporaryPassword}`,
+          `Password: ${password}`,
           "",
           "Please sign in to the AASMNHS Online Enrollment System and change your password as soon as possible.",
           "Do not share your password with anyone.",
@@ -977,7 +961,7 @@ export async function POST(request: NextRequest) {
             <p>Your online enrollment application has been saved successfully.</p>
             <div style="background:#f3f4f6;padding:16px;border-radius:8px">
               <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-              <p><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}</p>
+              <p><strong>Password:</strong> ${escapeHtml(password)}</p>
             </div>
             <p>Please sign in to the AASMNHS Online Enrollment System and change your password as soon as possible.</p>
             <p style="color:#b91c1c"><strong>Security reminder:</strong> Do not share your password with anyone.</p>
@@ -1011,7 +995,7 @@ export async function POST(request: NextRequest) {
         id: application.id,
         emailSent,
         message: emailSent
-          ? "Your application was saved. Check your email for your temporary login password."
+          ? "Your application was saved. Check your email for your login password."
           : "Your application was saved, but the login email could not be sent.",
         ...(emailWarning ? { emailWarning } : {}),
       },

@@ -187,7 +187,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 1. Generate or use supplied temporary password
+    // 1. Generate or use supplied password
     const generatedPassword =
       typeof customPassword === "string" && customPassword.trim().length >= 6
         ? customPassword.trim()
@@ -526,7 +526,7 @@ export async function POST(request: Request) {
                     </div>
 
                     <div>
-                      <span style="display: block; font-size: 12px; color: #6b7280; font-weight: 600;">TEMPORARY PASSWORD:</span>
+                      <span style="display: block; font-size: 12px; color: #6b7280; font-weight: 600;">PASSWORD:</span>
                       <span style="display: inline-block; margin-top: 4px; padding: 6px 14px; background-color: #e8f5e9; border: 1px dashed #176b4d; border-radius: 6px; font-size: 18px; font-weight: 800; color: #063b2b; letter-spacing: 1.5px; font-family: monospace;">
                         ${generatedPassword}
                       </span>
@@ -548,7 +548,7 @@ export async function POST(request: Request) {
 
               <!-- SECURITY NOTICE -->
               <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 14px 16px; border-radius: 8px; font-size: 12px; color: #92400e; line-height: 1.6;">
-                <strong>⚠️ Security Notice:</strong> Please keep this password confidential. We strongly recommend changing your temporary password immediately upon your first login.
+                <strong>⚠️ Security Notice:</strong> Please keep this password confidential. We strongly recommend changing your password immediately upon your first login.
               </div>
 
             </td>
@@ -580,7 +580,7 @@ export async function POST(request: Request) {
           to: cleanEmail,
           subject: "Your Student Account Credentials - AASMNHS Online Enrollment",
           html: htmlTemplate,
-          text: `Dear ${studentName},\n\nYour enrollment application for ${enrollmentSelection} has been received by Anselmo A. Sandoval Memorial National High School.\n\nYour Student Portal Login Credentials:\nRegistered Email: ${cleanEmail}\nTemporary Password: ${generatedPassword}\n\nLogin Portal: ${loginUrl}\n\nPlease keep this password secure.\n\nAnselmo A. Sandoval Memorial National High School\nMabini, Batangas • DepEd Region IV-A`,
+          text: `Dear ${studentName},\n\nYour enrollment application for ${enrollmentSelection} has been received by Anselmo A. Sandoval Memorial National High School.\n\nYour Student Portal Login Credentials:\nRegistered Email: ${cleanEmail}\nPassword: ${generatedPassword}\n\nLogin Portal: ${loginUrl}\n\nPlease keep this password secure.\n\nAnselmo A. Sandoval Memorial National High School\nMabini, Batangas • DepEd Region IV-A`,
         });
 
         emailSent = true;
@@ -628,10 +628,10 @@ export async function POST(request: Request) {
       linkedApplicationId,
       authNotice,
       message: emailSent
-        ? `Account confirmation email with your temporary password has been sent to ${cleanEmail}.`
+        ? `Account confirmation email with your password has been sent to ${cleanEmail}.`
         : isConfigured
           ? `Could not send the email: ${emailError || "Unknown error"}. Please try again or contact the school registrar.`
-          : `Temporary password created for ${cleanEmail}. (To send live emails, add your Gmail App Password to SMTP_PASS in .env.local).`,
+          : `Password created for ${cleanEmail}. (To send live emails, add your Gmail App Password to SMTP_PASS in .env.local).`,
     });
   } catch (error: unknown) {
     console.error("Error in send-account route:", error);
