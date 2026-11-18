@@ -543,12 +543,16 @@ export default function ApplicationsPage() {
         selected.contact_number,
         details.contact_number,
       ]),
-      ipCommunity: booleanLabel(
-        selected.is_ip_community ?? details.is_ip_community
-      ),
-      fourPs: booleanLabel(
-        selected.is_4ps_beneficiary ?? details.is_4ps_beneficiary
-      ),
+      ipCommunityType:
+        firstText([
+          selected.ip_community_type,
+          details.ip_community_type,
+        ]) || "—",
+      fourPsHouseholdId:
+        firstText([
+          selected.four_ps_household_id,
+          details.four_ps_household_id,
+        ]) || "—",
       currentAddress:
         firstText([selected.current_address, selected.address]) ||
         formatAddressValue(details.current_address) ||
@@ -847,10 +851,13 @@ export default function ApplicationsPage() {
                     value={detail?.contactNumber ?? "—"}
                   />
                   <DetailField
-                    label="Indigenous People Community"
-                    value={detail?.ipCommunity ?? "—"}
+                    label="IP Community / Indigenous Cultural Community"
+                    value={detail?.ipCommunityType ?? "—"}
                   />
-                  <DetailField label="4Ps (Yes/No)" value={detail?.fourPs ?? "—"} />
+                  <DetailField
+                    label="4Ps Household ID"
+                    value={detail?.fourPsHouseholdId ?? "—"}
+                  />
                   <DetailField
                     label="Current Address"
                     value={detail?.currentAddress ?? "—"}

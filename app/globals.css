@@ -118,12 +118,9 @@ a {
   max-width: 100%;
 }
 
-@media (max-width: 640px) {
-  .portal-input[type="date"] {
-    padding-right: 0.5rem;
-    padding-left: 0.5rem;
-    font-size: 16px;
-  }
+.portal-input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
 }
 
 .portal-input::placeholder {

@@ -279,18 +279,6 @@ function csvCell(value: unknown) {
   return `"${guarded.replaceAll('"', '""')}"`;
 }
 
-const YES_NO_EXPORT_KEYS = new Set(["is_ip_community", "is_4ps_beneficiary"]);
-
-function yesNoExportValue(value: unknown): unknown {
-  if (typeof value === "boolean") return value ? "YES" : "NO";
-
-  const text = String(value ?? "").trim().toLowerCase();
-  if (text === "true" || text === "1" || text === "yes") return "YES";
-  if (text === "false" || text === "0" || text === "no") return "NO";
-
-  return value;
-}
-
 function formatDate(value: unknown): string {
   if (!value) return "—";
   const date = new Date(String(value));
@@ -937,20 +925,10 @@ export default function ReportsPage() {
       "requirements_documents",
     ]);
 
-    const exportRows: Row[] = summaryRows.map((r) => {
-      const row: Row = {
-        ...r,
-        status: normalizeEnrollmentStatus(r.status),
-      };
-
-      for (const key of YES_NO_EXPORT_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(row, key)) {
-          row[key] = yesNoExportValue(row[key]);
-        }
-      }
-
-      return row;
-    });
+    const exportRows: Row[] = summaryRows.map((r) => ({
+      ...r,
+      status: normalizeEnrollmentStatus(r.status),
+    }));
     const allKeys = Array.from(
       new Set(exportRows.flatMap((r) => Object.keys(r)))
     );

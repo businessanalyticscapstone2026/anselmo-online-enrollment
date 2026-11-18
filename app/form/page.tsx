@@ -42,7 +42,7 @@ const initialAddress: AddressState = {
   barangay: "",
   municipality: "",
   province: "",
-  country: "Philippines",
+  country: "PHILIPPINES",
   zipCode: "",
 };
 
@@ -122,6 +122,9 @@ function FormContent() {
     );
   }, [hasValidSelection, trackConfig, router]);
 
+  // Learner reference number (optional)
+  const [lrn, setLrn] = useState("");
+
   // Student basic information states
   const [lastName, setLastName] = useState(() =>
     typeof window !== "undefined"
@@ -141,6 +144,7 @@ function FormContent() {
   const [gender, setGender] = useState("");
   const [religion, setReligion] = useState("");
   const [contactNumber, setContactNumber] = useState("");
+  const [collegeCourse, setCollegeCourse] = useState("");
 
   // Address state management
   const [currentAddress, setCurrentAddress] = useState<AddressState>(initialAddress);
@@ -149,7 +153,9 @@ function FormContent() {
 
   // Social information
   const [isIpCommunity, setIsIpCommunity] = useState(false);
+  const [ipCommunityType, setIpCommunityType] = useState("");
   const [is4psBeneficiary, setIs4psBeneficiary] = useState(false);
+  const [fourPsHouseholdId, setFourPsHouseholdId] = useState("");
 
   // Special needs education program
   const [specialNeedsProgram, setSpecialNeedsProgram] = useState<boolean | null>(null);
@@ -415,6 +421,18 @@ function FormContent() {
       return "School ID must contain exactly 6 digits.";
     }
 
+    if (isIpCommunity && !ipCommunityType.trim()) {
+      return "Please specify the Indigenous People (IP) Community/Indigenous Cultural Community.";
+    }
+
+    if (is4psBeneficiary && !fourPsHouseholdId.trim()) {
+      return "Please enter the 4Ps Household ID.";
+    }
+
+    if (!collegeCourse.trim()) {
+      return "Please enter the course you want to take in college.";
+    }
+
     if (preferredModalities.length === 0) {
       return "Please select at least one preferred distance learning modality.";
     }
@@ -458,16 +476,20 @@ function FormContent() {
       middleName: middleName.trim(),
       lastName: lastName.trim(),
       extension: extension.trim(),
+      lrn: lrn.trim(),
       email: email.trim().toLowerCase(),
       birthDate: dob,
       placeOfBirth: pob.trim(),
       gender,
       religion: religion.trim(),
       contactNumber: contactNumber.trim(),
+      collegeCourse: collegeCourse.trim(),
       selectedTrack,
       selectedCluster,
       isIpCommunity,
+      ipCommunityType: isIpCommunity ? ipCommunityType.trim() : "",
       is4psBeneficiary,
+      fourPsHouseholdId: is4psBeneficiary ? fourPsHouseholdId.trim() : "",
       specialNeedsProgram,
       specialNeedsGroup: specialNeedsProgram ? specialNeedsGroup : "",
       specialNeedsCondition: specialNeedsProgram ? specialNeedsCondition : "",
@@ -745,6 +767,38 @@ function FormContent() {
               </div>
             </section>
 
+            {/* LEARNER REFERENCE NUMBER & COLLEGE COURSE */}
+            <section className="mb-10">
+              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
+                Learner Reference No. (LRN), if applicable:
+              </h4>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <FormInput
+                  label="LEARNER REFERENCE NO. (LRN)"
+                  placeholder="e.g., 123456789012"
+                  value={lrn}
+                  onChange={(e) => setLrn(keepDigits(e.target.value, 12))}
+                  inputMode="numeric"
+                  maxLength={12}
+                  title="Enter the 12-digit LRN if applicable."
+                />
+                <FormInput
+                  label="WHAT COURSE DO YOU WANT TO TAKE IN COLLEGE?"
+                  placeholder="e.g., Bachelor of Science in Computer Science"
+                  value={collegeCourse}
+                  onChange={(e) =>
+                    setCollegeCourse(
+                      keepTextAndNumberCharacters(e.target.value, 200)
+                    )
+                  }
+                  required
+                  minLength={2}
+                  maxLength={200}
+                />
+              </div>
+            </section>
+
             {/* STUDENT NAME */}
             <section className="mb-10">
               <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
@@ -914,16 +968,51 @@ function FormContent() {
               </h4>
 
               <div className="space-y-3.5">
-                <FormCheckbox
-                  label="Belonging to any Indigenous People (IP) community"
-                  checked={isIpCommunity}
-                  onChange={setIsIpCommunity}
-                />
-                <FormCheckbox
-                  label="Is your family an active beneficiary of 4Ps (Pantawid Pamilyang Pilipino Program)?"
-                  checked={is4psBeneficiary}
-                  onChange={setIs4psBeneficiary}
-                />
+                <div>
+                  <FormCheckbox
+                    label="Belonging to any Indigenous People (IP) Community/Indigenous Cultural Community?"
+                    checked={isIpCommunity}
+                    onChange={setIsIpCommunity}
+                  />
+                  {isIpCommunity && (
+                    <div className="ml-7 mt-3 max-w-md">
+                      <FormInput
+                        label="PLEASE SPECIFY THE COMMUNITY"
+                        placeholder="e.g., Ayta, Igorot, Mangyan"
+                        value={ipCommunityType}
+                        onChange={(e) =>
+                          setIpCommunityType(
+                            keepTextCharacters(e.target.value, 150)
+                          )
+                        }
+                        required
+                        maxLength={150}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <FormCheckbox
+                    label="Is your family a beneficiary of 4Ps?"
+                    checked={is4psBeneficiary}
+                    onChange={setIs4psBeneficiary}
+                  />
+                  {is4psBeneficiary && (
+                    <div className="ml-7 mt-3 max-w-md">
+                      <FormInput
+                        label="IF YES, PLEASE PUT THE 4Ps HOUSEHOLD ID"
+                        placeholder="e.g., 12345678901234"
+                        value={fourPsHouseholdId}
+                        onChange={(e) =>
+                          setFourPsHouseholdId(keepDigits(e.target.value, 20))
+                        }
+                        required
+                        inputMode="numeric"
+                        maxLength={20}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
 

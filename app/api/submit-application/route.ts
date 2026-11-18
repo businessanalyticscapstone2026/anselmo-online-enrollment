@@ -267,16 +267,20 @@ export async function POST(request: NextRequest) {
     const lastName = textValue(data.lastName, 100);
     const studentFullName = joinNameParts(firstName, middleName, lastName);
     const extension = textValue(data.extension, 30);
+    const lrn = textValue(data.lrn, 12);
     const email = textValue(data.email, 254).toLowerCase();
     const birthDate = textValue(data.birthDate, 10);
     const placeOfBirth = textValue(data.placeOfBirth, 200);
     const gender = textValue(data.gender, 30).toLowerCase();
     const religion = textValue(data.religion, 100);
     const contactNumber = textValue(data.contactNumber, 30);
+    const collegeCourse = textValue(data.collegeCourse, 200);
     const selectedTrack = textValue(data.selectedTrack, 100);
     const selectedCluster = textValue(data.selectedCluster, 150);
     const isIpCommunity = data.isIpCommunity === true;
+    const ipCommunityType = textValue(data.ipCommunityType, 150);
     const is4psBeneficiary = data.is4psBeneficiary === true;
+    const fourPsHouseholdId = textValue(data.fourPsHouseholdId, 20);
     const sameAsCurrentAddress = data.sameAsCurrentAddress === true;
 
     const specialNeedsProgram = booleanOrNull(data.specialNeedsProgram);
@@ -748,12 +752,14 @@ export async function POST(request: NextRequest) {
     const studentDetails = {
       email,
       extension,
+      lrn: lrn || null,
+      college_course: collegeCourse || null,
       place_of_birth: placeOfBirth,
       religion,
       selected_track: selectedTrack,
       selected_cluster: selectedCluster,
-      is_ip_community: isIpCommunity,
-      is_4ps_beneficiary: is4psBeneficiary,
+      ip_community_type: isIpCommunity ? ipCommunityType || null : null,
+      four_ps_household_id: is4psBeneficiary ? fourPsHouseholdId || null : null,
       special_needs_program: specialNeedsProgram,
       special_needs_group: specialNeedsGroup || null,
       special_needs_condition: specialNeedsCondition || null,
@@ -782,6 +788,7 @@ export async function POST(request: NextRequest) {
       middle_name: middleName || null,
       last_name: lastName,
       email,
+      lrn: lrn || null,
       birth_date: birthDate || null,
       place_of_birth: placeOfBirth || null,
       sex: gender || null,
@@ -791,8 +798,9 @@ export async function POST(request: NextRequest) {
       current_address: formatAddress(currentAddress) || null,
       permanent_address: formatAddress(permanentAddress) || null,
       contact_number: contactNumber || null,
-      is_ip_community: isIpCommunity,
-      is_4ps_beneficiary: is4psBeneficiary,
+      college_course: collegeCourse || null,
+      ip_community_type: isIpCommunity ? ipCommunityType || null : null,
+      four_ps_household_id: is4psBeneficiary ? fourPsHouseholdId || null : null,
       special_needs_program: specialNeedsProgram,
       special_needs_group: specialNeedsGroup || null,
       special_needs_condition: specialNeedsCondition || null,

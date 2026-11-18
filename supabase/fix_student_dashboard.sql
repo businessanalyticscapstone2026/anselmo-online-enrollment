@@ -60,8 +60,6 @@ alter table public.student_applications
   add column if not exists place_of_birth text,
   add column if not exists gender text,
   add column if not exists religion text,
-  add column if not exists is_ip_community boolean default false,
-  add column if not exists is_4ps_beneficiary boolean default false,
   add column if not exists current_house_no text,
   add column if not exists current_street text,
   add column if not exists current_barangay text,

@@ -10,8 +10,6 @@ ALTER TABLE public.student_applications
   ADD COLUMN IF NOT EXISTS place_of_birth text,
   ADD COLUMN IF NOT EXISTS gender text,
   ADD COLUMN IF NOT EXISTS religion text,
-  ADD COLUMN IF NOT EXISTS is_ip_community boolean,
-  ADD COLUMN IF NOT EXISTS is_4ps_beneficiary boolean,
   ADD COLUMN IF NOT EXISTS current_address text,
   ADD COLUMN IF NOT EXISTS permanent_address text,
   ADD COLUMN IF NOT EXISTS father_name text,
@@ -38,14 +36,6 @@ SET
   religion = coalesce(
     nullif(btrim(religion), ''),
     nullif(btrim(student_details ->> 'religion'), '')
-  ),
-  is_ip_community = coalesce(
-    is_ip_community,
-    lower(coalesce(student_details ->> 'is_ip_community', '')) IN ('true', 'yes', '1')
-  ),
-  is_4ps_beneficiary = coalesce(
-    is_4ps_beneficiary,
-    lower(coalesce(student_details ->> 'is_4ps_beneficiary', '')) IN ('true', 'yes', '1')
   ),
   current_address = coalesce(
     nullif(btrim(current_address), ''),

@@ -4,6 +4,10 @@
 -- Safe to run more than once; older records keep null/empty values.
 
 alter table public.student_applications
+  add column if not exists lrn text,
+  add column if not exists ip_community_type text,
+  add column if not exists four_ps_household_id text,
+  add column if not exists college_course text,
   add column if not exists special_needs_program boolean,
   add column if not exists special_needs_group text,
   add column if not exists special_needs_condition text,
