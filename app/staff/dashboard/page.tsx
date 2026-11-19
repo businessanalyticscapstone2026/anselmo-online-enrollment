@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { normalizeEnrollmentStatus } from "@/lib/enrollmentStatus";
+import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import { supabase } from "@/lib/supabaseClient";
 import {
   Users,
@@ -194,8 +195,6 @@ function normalizeGender(value: string): string {
   if (["male", "m"].includes(gender)) return "Male";
   if (["female", "f"].includes(gender)) return "Female";
 
-  if (gender) return "Other";
-
   return "";
 }
 
@@ -262,7 +261,9 @@ export default function StaffDashboardPage() {
         );
       }
 
-      const records = (data ?? []) as Application[];
+      const records = filterVisibleApplications(
+        (data ?? []) as Application[]
+      );
 
       const dateKeys = [
         "submitted_at",
@@ -445,18 +446,15 @@ export default function StaffDashboardPage() {
 
   const male = genderCounts.Male ?? 0;
   const female = genderCounts.Female ?? 0;
-  const other = genderCounts.Other ?? 0;
-  const genderTotal = male + female + other;
+  const genderTotal = male + female;
 
   const malePercent = genderTotal > 0 ? (male / genderTotal) * 100 : 0;
   const femalePercent =
     genderTotal > 0 ? (female / genderTotal) * 100 : 0;
-  const otherPercent = genderTotal > 0 ? (other / genderTotal) * 100 : 0;
 
   const genderPie = `conic-gradient(
     #065f46 0% ${malePercent}%,
-    #10b981 ${malePercent}% ${malePercent + femalePercent}%,
-    #6ee7b7 ${malePercent + femalePercent}% 100%
+    #10b981 ${malePercent}% 100%
   )`;
 
   // Existing application-status chart.
@@ -809,12 +807,6 @@ export default function StaffDashboardPage() {
                     percentage: femalePercent,
                     color: "bg-emerald-500",
                   },
-                  {
-                    label: "Other",
-                    value: other,
-                    percentage: otherPercent,
-                    color: "bg-emerald-300",
-                  },
                 ].map((item) => (
                   <div key={item.label}>
                     <div className="mb-2 flex items-center gap-3">
@@ -856,7 +848,6 @@ export default function StaffDashboardPage() {
                   const dominant = [
                     { label: "Male", value: male, pct: malePercent },
                     { label: "Female", value: female, pct: femalePercent },
-                    { label: "Other", value: other, pct: otherPercent },
                   ].sort((a, b) => b.value - a.value)[0];
                   const gap = Math.abs(malePercent - femalePercent);
                   if (gap <= 10) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyAdminRequest } from "@/lib/auth/adminAuth";
 import { formatAccountName, normalizeEmail } from "@/lib/accountNames";
+import { hasReceivedCredentials } from "@/lib/applicationVisibility";
 
 export const runtime = "nodejs";
 
@@ -49,9 +50,53 @@ export async function GET(request: Request) {
     // Older student accounts were created without a profile full_name. Their
     // application record still has the name, so use it instead of showing
     // "Unnamed User".
-    const { data: applications, error: applicationError } = await supabaseAdmin
+    type ApplicationSummary = {
+      user_id: string | null;
+      first_name: string | null;
+      middle_name: string | null;
+      last_name: string | null;
+      status?: unknown;
+      requirements_submitted?: unknown;
+      student_details?: unknown;
+    };
+
+    let applications: ApplicationSummary[] = [];
+    let applicationError: { message?: string } | null = null;
+    let visibilityDataAvailable = true;
+
+    const extendedApplications = await supabaseAdmin
       .from("student_applications")
-      .select("user_id, first_name, middle_name, last_name");
+      .select(
+        "user_id, first_name, middle_name, last_name, status, requirements_submitted, student_details"
+      );
+
+    if (!extendedApplications.error) {
+      applications = (extendedApplications.data ??
+        []) as ApplicationSummary[];
+    } else {
+      applicationError = extendedApplications.error;
+
+      const fallbackApplications = await supabaseAdmin
+        .from("student_applications")
+        .select(
+          "user_id, first_name, middle_name, last_name, status, student_details"
+        );
+
+      if (!fallbackApplications.error) {
+        applications = (fallbackApplications.data ??
+          []) as ApplicationSummary[];
+        applicationError = null;
+      } else {
+        const namesOnly = await supabaseAdmin
+          .from("student_applications")
+          .select("user_id, first_name, middle_name, last_name");
+
+        applications = (namesOnly.data ??
+          []) as unknown as ApplicationSummary[];
+        applicationError = namesOnly.error ?? applicationError;
+        visibilityDataAvailable = false;
+      }
+    }
 
     if (applicationError) {
       console.warn(
@@ -60,44 +105,56 @@ export async function GET(request: Request) {
       );
     }
 
-    const applicationsByUserId = new Map<
-      string,
-      {
-        first_name: string | null;
-        middle_name: string | null;
-        last_name: string | null;
-      }
-    >();
+    const applicationsByUserId = new Map<string, ApplicationSummary>();
+    const visibleApplicationUserIds = new Set<string>();
 
-    for (const application of applications || []) {
-      if (application.user_id && !applicationsByUserId.has(application.user_id)) {
-        applicationsByUserId.set(application.user_id, application);
+    for (const application of applications) {
+      const userId = application.user_id ? String(application.user_id) : "";
+
+      if (!userId) continue;
+
+      if (!applicationsByUserId.has(userId)) {
+        applicationsByUserId.set(userId, application);
+      }
+
+      if (hasReceivedCredentials(application)) {
+        visibleApplicationUserIds.add(userId);
       }
     }
 
-    const users = (profiles || []).map((p) => {
-      const role = String(p.role || "student").trim().toLowerCase();
-      const email = normalizeEmail(p.email);
-      const application = applicationsByUserId.get(p.id);
-      const fullName =
-        formatAccountName(
-          {
-            fullName: p.full_name,
-            firstName: application?.first_name,
-            middleName: application?.middle_name,
-            lastName: application?.last_name,
-          },
-          email
-        ) || "Unnamed User";
+    const users = (profiles || [])
+      .filter((profile) => {
+        const role = String(profile.role || "student").trim().toLowerCase();
 
-      return {
-        id: p.id,
-        fullName,
-        email: p.email || "No email",
-        role: role,
-        createdAt: p.created_at,
-      };
-    });
+        if (role !== "student") return true;
+        if (!visibilityDataAvailable) return true;
+        if (!applicationsByUserId.has(profile.id)) return true;
+
+        return visibleApplicationUserIds.has(profile.id);
+      })
+      .map((p) => {
+        const role = String(p.role || "student").trim().toLowerCase();
+        const email = normalizeEmail(p.email);
+        const application = applicationsByUserId.get(p.id);
+        const fullName =
+          formatAccountName(
+            {
+              fullName: p.full_name,
+              firstName: application?.first_name,
+              middleName: application?.middle_name,
+              lastName: application?.last_name,
+            },
+            email
+          ) || "Unnamed User";
+
+        return {
+          id: p.id,
+          fullName,
+          email: p.email || "No email",
+          role: role,
+          createdAt: p.created_at,
+        };
+      });
 
     return NextResponse.json({ users });
   } catch (err) {

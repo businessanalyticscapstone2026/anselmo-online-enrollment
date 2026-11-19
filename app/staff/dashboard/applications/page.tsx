@@ -7,6 +7,7 @@ import {
   normalizeEnrollmentStatus,
 } from "@/lib/enrollmentStatus";
 import { supabase } from "@/lib/supabaseClient";
+import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import {
   Search,
   RefreshCw,
@@ -223,10 +224,11 @@ export default function ApplicationsPage() {
       if (fetchErr) {
         setError(fetchErr.message);
       } else {
-        // This module only reviews applications that are still pending.
+        // This module only reviews applications that are still pending and
+        // whose credentials have already been delivered to the student.
         // Enrolled and rejected records are excluded once their status is finalized.
         setRecords(
-          ((data ?? []) as AppRecord[]).filter(
+          filterVisibleApplications((data ?? []) as AppRecord[]).filter(
             (record) => !isStatusFinalized(record)
           )
         );
@@ -669,9 +671,6 @@ export default function ApplicationsPage() {
         selected.preferred_distance_modalities ??
           details.preferred_distance_modalities
       ),
-      certificationAccepted: booleanLabel(
-        selected.certification_accepted ?? details.certification_accepted
-      ),
     };
   }, [selected]);
 
@@ -1039,10 +1038,6 @@ export default function ApplicationsPage() {
                   <DetailField
                     label="Preferred Distance Modalities"
                     value={detail?.preferredModalities ?? "—"}
-                  />
-                  <DetailField
-                    label="Certification Confirmed"
-                    value={detail?.certificationAccepted ?? "—"}
                   />
                 </div>
               </div>

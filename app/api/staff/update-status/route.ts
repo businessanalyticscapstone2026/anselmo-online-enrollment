@@ -4,6 +4,7 @@ import { getAuthContext } from "@/lib/auth/server";
 import { hasValidMfaCookie } from "@/lib/auth/mfaCookie";
 import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activityLog";
+import { hasReceivedCredentials } from "@/lib/applicationVisibility";
 import { syncStudentProfile } from "@/lib/studentProfiles";
 import {
   getEnrollmentStatusLabel,
@@ -140,6 +141,18 @@ export async function POST(request: Request) {
     }
 
     const applicationRecord = application as ApplicationRecord;
+
+    if (!hasReceivedCredentials(applicationRecord)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This application is not available yet because the student has not received their login credentials.",
+        },
+        { status: 409 }
+      );
+    }
+
     const previousStatus = normalizeEnrollmentStatus(applicationRecord.status);
     const now = new Date().toISOString();
 

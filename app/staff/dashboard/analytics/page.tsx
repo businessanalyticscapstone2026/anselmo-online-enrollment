@@ -20,6 +20,7 @@ import {
   resolveSectionList,
   type SectionRecord,
 } from "@/lib/sections";
+import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import {
   evaluateEnrollmentAvailability,
   type EnrollmentSettings,
@@ -167,7 +168,11 @@ export default function AnalyticsPage() {
       if (applicationsResult.error) {
         setError(applicationsResult.error.message);
       } else {
-        setRecords((applicationsResult.data ?? []) as ApplicationRecord[]);
+        setRecords(
+          filterVisibleApplications(
+            (applicationsResult.data ?? []) as ApplicationRecord[]
+          )
+        );
       }
 
       if (!sectionsResult.error) {

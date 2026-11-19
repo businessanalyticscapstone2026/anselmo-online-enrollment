@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import nodemailer from "nodemailer";
 import { randomInt } from "node:crypto";
 import {
   evaluateEnrollmentAvailability,
@@ -117,19 +116,6 @@ function generatePassword(): string {
   return `AASMNHS - ${digits}`;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    const entities: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    };
-    return entities[character];
-  });
-}
-
 // Columns every application insert depends on. If the live schema is missing
 // one of these the save fails loudly instead of silently degrading.
 const CORE_APPLICATION_COLUMNS = new Set([
@@ -232,19 +218,10 @@ function strippableColumnsFromError(
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
 
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
       { success: false, message: "The server is missing its Supabase configuration." },
-      { status: 500 }
-    );
-  }
-
-  if (!gmailUser || !gmailAppPassword) {
-    return NextResponse.json(
-      { success: false, message: "The server email configuration is incomplete. Please contact the school registrar." },
       { status: 500 }
     );
   }
@@ -305,8 +282,6 @@ export async function POST(request: NextRequest) {
           )
       ),
     ];
-    const certificationAccepted = data.certificationAccepted === true;
-
     if (!firstName || !lastName || !email) {
       return NextResponse.json(
         { success: false, message: "First name, last name, and email address are required." },
@@ -639,17 +614,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!certificationAccepted) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please confirm the certification statement before submitting your application.",
-        },
-        { status: 400 }
-      );
-    }
-
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -769,7 +733,6 @@ export async function POST(request: NextRequest) {
       last_school_attended: lastSchoolAttended || null,
       last_school_id: lastSchoolId || null,
       preferred_distance_modalities: preferredModalities,
-      certification_accepted: certificationAccepted,
       current_address: currentAddress,
       permanent_address: permanentAddress,
       same_as_current_address: sameAsCurrentAddress,
@@ -778,6 +741,10 @@ export async function POST(request: NextRequest) {
         mother: submittedGuardians[1],
         legal_guardian: submittedGuardians[2],
       },
+      // Staff/admin records stay hidden until the final account step confirms
+      // that the credential email was delivered.
+      credentials_sent: false,
+      credentials_sent_at: null,
     };
 
     // Only columns confirmed in the user's current table schema are inserted here.
@@ -810,7 +777,6 @@ export async function POST(request: NextRequest) {
       last_school_attended: lastSchoolAttended || null,
       last_school_id: lastSchoolId || null,
       preferred_distance_modalities: preferredModalities,
-      certification_accepted: certificationAccepted,
       track: selectedTrack || null,
       selected_cluster: selectedCluster || null,
       strand: selectedCluster || null,
@@ -916,7 +882,7 @@ export async function POST(request: NextRequest) {
     await logActivity({
       userType: "Student",
       userEmail: email,
-      action: "Submitted Enrollment Application",
+      action: "Started Enrollment Application",
       details: {
         applicationId: application.id,
         userId: createdUserId,
@@ -927,85 +893,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send credentials only after the database insert succeeds.
-    let emailSent = false;
-    let emailWarning: string | null = null;
-
-    try {
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: {
-          user: gmailUser.trim(),
-          pass: gmailAppPassword.replace(/\s/g, ""),
-        },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-      });
-
-      const safeName = escapeHtml(`${firstName} ${lastName}`.trim());
-      await transporter.sendMail({
-        from: `"AASMNHS Online Enrollment" <${gmailUser}>`,
-        to: email,
-        subject: "Your AASMNHS Student Enrollment Account",
-        text: [
-          `Hello ${firstName} ${lastName},`,
-          "",
-          "Your online enrollment application has been saved.",
-          `Email: ${email}`,
-          `Password: ${password}`,
-          "",
-          "Please sign in to the AASMNHS Online Enrollment System and change your password as soon as possible.",
-          "Do not share your password with anyone.",
-          "",
-          "Anselmo A. Sandoval Memorial National High School",
-        ].join("\n"),
-        html: `
-          <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#1f2937">
-            <h2 style="color:#176b4d">AASMNHS Online Enrollment</h2>
-            <p>Hello ${safeName},</p>
-            <p>Your online enrollment application has been saved successfully.</p>
-            <div style="background:#f3f4f6;padding:16px;border-radius:8px">
-              <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-              <p><strong>Password:</strong> ${escapeHtml(password)}</p>
-            </div>
-            <p>Please sign in to the AASMNHS Online Enrollment System and change your password as soon as possible.</p>
-            <p style="color:#b91c1c"><strong>Security reminder:</strong> Do not share your password with anyone.</p>
-            <p>Anselmo A. Sandoval Memorial National High School</p>
-          </div>
-        `,
-      });
-
-      emailSent = true;
-    } catch (mailError) {
-      const error = mailError as Error & {
-        code?: string;
-        response?: string;
-        command?: string;
-      };
-
-      console.error("STUDENT EMAIL SENDING FAILED:", {
-        message: error.message,
-        code: error.code,
-        response: error.response,
-        command: error.command,
-      });
-
-      emailWarning =
-        "Your application was saved, but the account email could not be sent. Please contact the school registrar for assistance.";
-    }
-
+    // Credentials are sent on the final account step after requirements are
+    // uploaded. The draft stays hidden from staff/admin until then.
     return NextResponse.json(
       {
         success: true,
         id: application.id,
-        emailSent,
-        message: emailSent
-          ? "Your application was saved. Check your email for your login password."
-          : "Your application was saved, but the login email could not be sent.",
-        ...(emailWarning ? { emailWarning } : {}),
+        emailSent: false,
+        message:
+          "Your application details were saved. Complete the requirements and account steps to receive your login credentials.",
       },
       { status: 201 }
     );

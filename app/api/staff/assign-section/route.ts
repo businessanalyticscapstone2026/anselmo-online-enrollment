@@ -4,6 +4,7 @@ import { getAuthContext } from "@/lib/auth/server";
 import { hasValidMfaCookie } from "@/lib/auth/mfaCookie";
 import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activityLog";
+import { hasReceivedCredentials } from "@/lib/applicationVisibility";
 import { syncStudentProfile } from "@/lib/studentProfiles";
 import { getMailConfig } from "@/lib/mailer";
 import {
@@ -173,6 +174,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const applicationRecord = application as ApplicationRecord;
+
+    if (!hasReceivedCredentials(applicationRecord)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This application is not available yet because the student has not received their login credentials.",
+        },
+        { status: 409 }
+      );
+    }
+
     const previousSectionId =
       application.assigned_section_id != null
         ? String(application.assigned_section_id)
@@ -254,7 +268,6 @@ export async function POST(request: Request) {
 
     await syncStudentProfile(supabaseAdmin, applicationId);
 
-    const applicationRecord = application as ApplicationRecord;
     const sectionChanged = savedSectionId !== previousSectionId;
 
     let emailSent = false;

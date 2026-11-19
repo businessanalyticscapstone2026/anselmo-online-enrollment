@@ -171,7 +171,6 @@ function FormContent() {
 
   // Distance learning modality preference
   const [preferredModalities, setPreferredModalities] = useState<string[]>([]);
-  const [certificationAccepted, setCertificationAccepted] = useState(false);
 
   // Parent / guardian information
   const [guardians, setGuardians] = useState<GuardianState[]>([
@@ -437,10 +436,6 @@ function FormContent() {
       return "Please select at least one preferred distance learning modality.";
     }
 
-    if (!certificationAccepted) {
-      return "Please confirm the certification statement before submitting your application.";
-    }
-
     if (!agreedToTerms) {
       return "You must read and agree to the Terms and Conditions before submitting your application.";
     }
@@ -499,7 +494,6 @@ function FormContent() {
       lastSchoolAttended: lastSchoolAttended.trim(),
       lastSchoolId: lastSchoolId.trim(),
       preferredModalities: [...preferredModalities],
-      certificationAccepted,
       currentAddress: cleanCurrentAddress,
       permanentAddress: cleanPermanentAddress,
       sameAsCurrentAddress,

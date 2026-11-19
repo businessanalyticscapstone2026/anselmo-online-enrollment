@@ -88,6 +88,14 @@ export default function AccountPage() {
         return;
       }
 
+      if (data.emailSent === false) {
+        setApiFeedback(
+          data.message ||
+          "Your password was created, but the credential email could not be delivered. Please resend it or contact the school registrar."
+        );
+        return;
+      }
+
       if (typeof window !== "undefined") {
         localStorage.removeItem("studentAccountEmailPending");
       }

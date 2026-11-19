@@ -10,6 +10,7 @@ import {
   resolveSectionList,
   type SectionRecord,
 } from "@/lib/sections";
+import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import { supabase } from "@/lib/supabaseClient";
 import {
   Download,
@@ -382,7 +383,9 @@ export default function ReportsPage() {
       if (appsRes.error) {
         setError(appsRes.error.message);
       } else {
-        setRows((appsRes.data ?? []) as Row[]);
+        setRows(
+          filterVisibleApplications((appsRes.data ?? []) as Row[])
+        );
       }
 
       setSections(

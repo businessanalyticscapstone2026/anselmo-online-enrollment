@@ -595,6 +595,102 @@ export async function POST(request: Request) {
       );
     }
 
+    // Staff/admin lists only display applications after the credential email
+    // has actually been delivered. Persist that confirmation in the same
+    // jsonb payload used to build the enrollment draft.
+    let credentialsRecorded = false;
+
+    if (emailSent) {
+      try {
+        const credentialsSentAt = new Date().toISOString();
+        const targetApplicationId = String(
+          linkedApplicationId || applicationId || ""
+        ).trim();
+        const targetIsUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            targetApplicationId
+          );
+
+        let applicationRows:
+          | Array<{ id: string; student_details?: unknown }>
+          | null = null;
+        let lookupError: { message?: string } | null = null;
+
+        if (targetIsUuid) {
+          const result = await supabaseAdmin
+            .from("student_applications")
+            .select("id, student_details")
+            .eq("id", targetApplicationId)
+            .limit(1);
+          applicationRows = (result.data ?? null) as
+            | Array<{ id: string; student_details?: unknown }>
+            | null;
+          lookupError = result.error;
+        } else {
+          const result = await supabaseAdmin
+            .from("student_applications")
+            .select("id, student_details")
+            .ilike("email", cleanEmail)
+            .limit(1);
+          applicationRows = (result.data ?? null) as
+            | Array<{ id: string; student_details?: unknown }>
+            | null;
+          lookupError = result.error;
+        }
+
+        const application = applicationRows?.[0];
+
+        if (lookupError) {
+          console.warn(
+            "Could not locate the application to mark credentials as sent:",
+            lookupError.message
+          );
+        } else if (application) {
+          const storedDetails = application.student_details;
+          let details: Record<string, unknown> = {};
+
+          if (typeof storedDetails === "string") {
+            try {
+              const parsed: unknown = JSON.parse(storedDetails);
+              if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                details = parsed as Record<string, unknown>;
+              }
+            } catch {
+              details = {};
+            }
+          } else if (
+            storedDetails &&
+            typeof storedDetails === "object" &&
+            !Array.isArray(storedDetails)
+          ) {
+            details = storedDetails as Record<string, unknown>;
+          }
+
+          const { error: markError } = await supabaseAdmin
+            .from("student_applications")
+            .update({
+              student_details: {
+                ...details,
+                credentials_sent: true,
+                credentials_sent_at: credentialsSentAt,
+              },
+            })
+            .eq("id", application.id);
+
+          if (markError) {
+            console.warn(
+              "Could not mark credentials as sent on the application:",
+              markError.message
+            );
+          } else {
+            credentialsRecorded = true;
+          }
+        }
+      } catch (markError) {
+        console.warn("Credentials-sent tracking notice:", markError);
+      }
+    }
+
     await logActivity({
       userType: staffCaller
         ? isAdminRole(auth.role)
@@ -612,6 +708,7 @@ export async function POST(request: Request) {
         linkedApplicationId,
         authUserId,
         emailSent,
+        credentialsRecorded,
         timestamp: new Date().toISOString(),
       },
     });
@@ -621,6 +718,7 @@ export async function POST(request: Request) {
       email: cleanEmail,
       studentName,
       emailSent,
+      credentialsRecorded,
       emailConfigured: isConfigured,
       emailError,
       authRegistered,

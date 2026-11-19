@@ -7,6 +7,7 @@ import {
 } from "@/lib/enrollmentStatus";
 import { DEFAULT_SECTIONS, type SectionRecord } from "@/lib/sections";
 import { TRACKS, getTrackLabel, getClustersForTrack, getTrackForCluster, normalizeTrack, type TrackValue } from "@/lib/clusters";
+import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import { supabase } from "@/lib/supabaseClient";
 import { RefreshCw, Save, AlertCircle, Users, CheckCircle2, Info, Plus, Pencil, Trash2, X, Lock } from "lucide-react";
 
@@ -129,9 +130,12 @@ export default function SectionsPage() {
       if (appsRes.error) {
         setError(`Applications: ${appsRes.error.message}`);
       } else {
-        // Enrolled and pending students can be reviewed here. Rejected
-        // applications remain in Applications & Requirements.
-        const applicationList = ((appsRes.data ?? []) as App[]).filter((r) =>
+        // Enrolled and pending students can be reviewed here after their
+        // credentials have been delivered. Rejected applications remain in
+        // Applications & Requirements.
+        const applicationList = filterVisibleApplications(
+          (appsRes.data ?? []) as App[]
+        ).filter((r) =>
           ["enrolled", "pending"].includes(
             normalizeEnrollmentStatus(r.status)
           )
