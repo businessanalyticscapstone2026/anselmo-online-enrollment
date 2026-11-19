@@ -118,11 +118,10 @@ export default function AdminDashboardShell({
               key={href}
               href={href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-sm transition ${
-                active
+              className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-sm transition ${active
                   ? "border-yellow-400/40 bg-yellow-400/15 font-semibold text-yellow-200"
                   : "border-transparent text-emerald-100 hover:border-emerald-700 hover:bg-emerald-800/50"
-              }`}
+                }`}
             >
               <Icon size={18} strokeWidth={1.8} />
               <span>{label}</span>
@@ -218,7 +217,7 @@ export default function AdminDashboardShell({
         </div>
 
         <footer className="border-t border-[#c3e2cd] px-6 py-4 text-center text-[10px] text-[#3f5f50]">
-          © {new Date().getFullYear()} Anselmo A. Sandoval Memorial National High School
+          © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
         </footer>
       </main>
 

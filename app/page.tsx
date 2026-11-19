@@ -425,8 +425,7 @@ export default async function Home() {
         {/* Footer */}
         <footer className="border-t border-emerald-800/70 bg-[#052e1c]/70 px-6 py-5 text-center backdrop-blur-sm">
           <p className="text-xs text-emerald-200 sm:text-sm">
-            © {new Date().getFullYear()} Anselmo A. Sandoval Memorial National
-            High School
+            © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
           </p>
           <p className="mt-1 text-[11px] text-emerald-300/80 sm:text-xs">
             Online Enrollment System for Grade 11 Students

@@ -209,15 +209,60 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Explicitly preserve student applications: unlink user_id by setting to null
-    // so that submitted enrollment records, grades, and requirements are NOT deleted.
-    const { error: unlinkError } = await supabaseAdmin
-      .from("student_applications")
-      .update({ user_id: null })
-      .eq("user_id", userId);
+    // 1. Student accounts: remove their enrollment records entirely so the
+    // student disappears from every staff dashboard, report, and analytics
+    // list. The full account (including applications) is already archived in
+    // deleted_accounts above, and the student may enroll again later.
+    if (finalRole === "student") {
+      const cleanupErrors: string[] = [];
 
-    if (unlinkError) {
-      console.warn("Notice: unlinking student applications:", unlinkError.message);
+      if (finalEmail) {
+        const { error: emailDeleteError } = await supabaseAdmin
+          .from("student_applications")
+          .delete()
+          .ilike("email", finalEmail);
+
+        if (emailDeleteError) {
+          cleanupErrors.push(emailDeleteError.message);
+        }
+      }
+
+      const { error: userDeleteError } = await supabaseAdmin
+        .from("student_applications")
+        .delete()
+        .eq("user_id", userId);
+
+      if (userDeleteError) {
+        cleanupErrors.push(userDeleteError.message);
+      }
+
+      await supabaseAdmin.from("student_profiles").delete().eq("id", userId);
+
+      if (cleanupErrors.length > 0) {
+        console.error("Student enrollment cleanup errors:", cleanupErrors);
+        return NextResponse.json(
+          {
+            error: `Could not remove the student's enrollment records: ${cleanupErrors.join(
+              "; "
+            )}`,
+          },
+          { status: 500 }
+        );
+      }
+    } else {
+      // Non-student accounts: keep any linked enrollment records by unlinking
+      // user_id so submitted records and documents are preserved.
+      const { error: unlinkError } = await supabaseAdmin
+        .from("student_applications")
+        .update({ user_id: null })
+        .eq("user_id", userId);
+
+      if (unlinkError) {
+        console.warn(
+          "Notice: unlinking student applications:",
+          unlinkError.message
+        );
+      }
     }
 
     // 2. Delete Auth account via Supabase Auth Admin API
@@ -267,9 +312,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Account for ${
-        finalEmail || userId
-      } was successfully removed and archived. Applications and uploaded documents have been preserved.`,
+      message:
+        finalRole === "student"
+          ? `Account for ${
+              finalEmail || userId
+            } was successfully removed and archived. The student's enrollment records were removed from all staff dashboards, and the student may enroll again in the future.`
+          : `Account for ${
+              finalEmail || userId
+            } was successfully removed and archived. Applications and uploaded documents have been preserved.`,
     });
   } catch (err) {
     console.error("Error in POST /api/admin/users/delete:", err);

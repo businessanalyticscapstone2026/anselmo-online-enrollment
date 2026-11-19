@@ -17,7 +17,9 @@ import {
   User,
   ClipboardCheck,
   CheckCircle2,
+  Clock3,
   Save,
+  Lock,
 } from "lucide-react";
 
 type AppRecord = Record<string, unknown>;
@@ -107,6 +109,9 @@ const getCluster = (record: AppRecord) => {
   return firstText([record.track, record.selected_track, record.program]);
 };
 
+const isStatusFinalized = (record: AppRecord) =>
+  normalizeEnrollmentStatus(record.status) !== "pending";
+
 const formatCluster = (value: string) => {
   if (!value) return "Not provided";
 
@@ -193,7 +198,6 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selected, setSelected] = useState<AppRecord | null>(null);
   const [previewFile, setPreviewFile] = useState<{ label: string; url: string } | null>(null);
   const [statusTarget, setStatusTarget] = useState<AppRecord | null>(null);
@@ -219,7 +223,13 @@ export default function ApplicationsPage() {
       if (fetchErr) {
         setError(fetchErr.message);
       } else {
-        setRecords((data ?? []) as AppRecord[]);
+        // This module only reviews applications that are still pending.
+        // Enrolled and rejected records are excluded once their status is finalized.
+        setRecords(
+          ((data ?? []) as AppRecord[]).filter(
+            (record) => !isStatusFinalized(record)
+          )
+        );
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error loading applications");
@@ -231,6 +241,8 @@ export default function ApplicationsPage() {
   }, []);
 
   const openStatusEditor = (record: AppRecord) => {
+    if (isStatusFinalized(record)) return;
+
     setStatusTarget(record);
     setStatusDraft(normalizeEnrollmentStatus(record.status));
     setStatusRemarks(
@@ -250,9 +262,23 @@ export default function ApplicationsPage() {
   const saveStatus = async () => {
     if (!statusTarget || statusSaving) return;
 
+    if (isStatusFinalized(statusTarget)) {
+      setStatusError(
+        "This enrollment status has already been finalized and can no longer be changed."
+      );
+      return;
+    }
+
     const id = String(statusTarget.id);
     const targetStatus = normalizeEnrollmentStatus(statusDraft);
     const targetRemark = statusRemarks.trim();
+
+    if (targetStatus === "pending") {
+      setStatusError(
+        "Select Enrolled or Rejected to finalize the enrollment status."
+      );
+      return;
+    }
 
     setStatusSaving(true);
     setStatusError("");
@@ -329,10 +355,9 @@ export default function ApplicationsPage() {
         registrar_remarks: savedRemark,
       };
 
+      // The status is now finalized, so the record leaves the pending list.
       setRecords((prev) =>
-        prev.map((record) =>
-          String(record.id) === id ? { ...record, ...updatedFields } : record
-        )
+        prev.filter((record) => String(record.id) !== id)
       );
       setSelected((prev) =>
         prev && String(prev.id) === id ? { ...prev, ...updatedFields } : prev
@@ -420,13 +445,9 @@ export default function ApplicationsPage() {
     () =>
       records.filter((r) => {
         const full = `${r.first_name ?? ""} ${r.middle_name ?? ""} ${r.last_name ?? ""} ${r.email ?? ""} ${r.contact_number ?? ""} ${r.id ?? ""}`.toLowerCase();
-        return (
-          full.includes(search.toLowerCase()) &&
-          (statusFilter === "all" ||
-            normalizeEnrollmentStatus(r.status) === statusFilter)
-        );
+        return full.includes(search.toLowerCase());
       }),
-    [records, search, statusFilter]
+    [records, search]
   );
 
   // Extract file/document URLs
@@ -516,17 +537,36 @@ export default function ApplicationsPage() {
     const motherInfo = getGuardianInfo(selected, "mother", "mother");
     const guardianInfo = getGuardianInfo(selected, "guardian", "legal_guardian");
 
+    const ipCommunityType = firstText([
+      selected.ip_community_type,
+      details.ip_community_type,
+    ]);
+    const fourPsHouseholdId = firstText([
+      selected.four_ps_household_id,
+      details.four_ps_household_id,
+    ]);
+
     return {
       name:
         [selected.first_name, selected.middle_name, selected.last_name]
           .filter(Boolean)
           .map(String)
           .join(" ") || "—",
+      lrn:
+        firstText([
+          selected.lrn,
+          selected.learner_reference_number,
+          details.lrn,
+          requirements.lrn,
+        ]) || "—",
+      extension: firstText([selected.extension, details.extension]) || "—",
       email: firstText([
         selected.email,
         details.email,
         requirements.student_email,
       ]),
+      collegeCourse:
+        firstText([selected.college_course, details.college_course]) || "—",
       birthDate: firstText([selected.birth_date]),
       placeOfBirth: firstText([
         selected.place_of_birth,
@@ -543,16 +583,11 @@ export default function ApplicationsPage() {
         selected.contact_number,
         details.contact_number,
       ]),
-      ipCommunityType:
-        firstText([
-          selected.ip_community_type,
-          details.ip_community_type,
-        ]) || "—",
-      fourPsHouseholdId:
-        firstText([
-          selected.four_ps_household_id,
-          details.four_ps_household_id,
-        ]) || "—",
+      isIpCommunityMember: ipCommunityType ? "Yes" : "No",
+      ipCommunityType: ipCommunityType || "—",
+      isFourPsBeneficiary: fourPsHouseholdId ? "Yes" : "No",
+      fourPsHouseholdId: fourPsHouseholdId || "—",
+      sameAsCurrentAddress: booleanLabel(details.same_as_current_address),
       currentAddress:
         firstText([selected.current_address, selected.address]) ||
         formatAddressValue(details.current_address) ||
@@ -561,15 +596,36 @@ export default function ApplicationsPage() {
         firstText([selected.permanent_address]) ||
         formatAddressValue(details.permanent_address),
       fatherName:
-        firstText([selected.father_name]) || guardianName(fatherInfo),
+        firstText([selected.father_name]) || guardianName(fatherInfo) || "—",
+      fatherMiddleName: fatherInfo?.middleName || "—",
+      fatherContact:
+        firstText([
+          selected.father_contact_number,
+          fatherInfo?.contactNumber,
+        ]) || "—",
       motherName:
-        firstText([selected.mother_name]) || guardianName(motherInfo),
+        firstText([selected.mother_name]) || guardianName(motherInfo) || "—",
+      motherMiddleName: motherInfo?.middleName || "—",
+      motherContact:
+        firstText([
+          selected.mother_contact_number,
+          motherInfo?.contactNumber,
+        ]) || "—",
       legalGuardianName:
-        firstText([selected.legal_guardian_name]) || guardianName(guardianInfo),
-      legalGuardianContact: firstText([
-        selected.legal_guardian_contact_number,
-        guardianInfo?.contactNumber,
-      ]),
+        firstText([selected.legal_guardian_name]) ||
+        guardianName(guardianInfo) ||
+        "—",
+      legalGuardianMiddleName: guardianInfo?.middleName || "—",
+      legalGuardianContact:
+        firstText([
+          selected.legal_guardian_contact_number,
+          guardianInfo?.contactNumber,
+        ]) || "—",
+      specialNeedsGroup:
+        firstText([
+          selected.special_needs_group,
+          details.special_needs_group,
+        ]) || "—",
       specialNeedsProgram: booleanLabel(
         selected.special_needs_program ?? details.special_needs_program
       ),
@@ -619,6 +675,8 @@ export default function ApplicationsPage() {
     };
   }, [selected]);
 
+  const statusFinalized = statusTarget ? isStatusFinalized(statusTarget) : false;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -628,7 +686,8 @@ export default function ApplicationsPage() {
           </p>
           <h1 className="mt-2 text-3xl font-extrabold">Applications & Requirements</h1>
           <p className="mt-2 text-sm text-emerald-900">
-            Review submitted enrollment forms, credentials, and student qualifications.
+            Review pending enrollment forms, credentials, and student qualifications.
+            Enrolled students are moved to the Section &amp; Adviser module.
           </p>
         </div>
         <button
@@ -662,22 +721,16 @@ export default function ApplicationsPage() {
           />
         </div>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
-          >
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="enrolled">Enrolled</option>
-          <option value="rejected">Rejected</option>
-        </select>
+        <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-3 text-xs font-semibold text-emerald-700">
+          <Clock3 size={14} />
+          Pending applications only
+        </span>
       </div>
 
       {/* Applications Table */}
       <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
         <div className="flex items-center justify-between border-b border-emerald-200 px-5 py-4">
-          <h2 className="font-semibold">Submitted Applications</h2>
+          <h2 className="font-semibold">Pending Applications</h2>
           <span className="text-xs text-emerald-700 font-mono">
             {filtered.length} record{filtered.length === 1 ? "" : "s"}
           </span>
@@ -742,18 +795,28 @@ export default function ApplicationsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           onClick={() => setSelected(r)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-amber-50"
+                          className="inline-flex w-36 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-amber-50"
                         >
                           <Eye size={14} />
                           View record
                         </button>
-                        <button
-                          onClick={() => openStatusEditor(r)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                        >
-                          <ClipboardCheck size={14} />
-                          Update status
-                        </button>
+                        {isStatusFinalized(r) ? (
+                          <span
+                            title="Enrollment status updates are limited to one per student and cannot be changed."
+                            className="inline-flex w-36 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800"
+                          >
+                            <Lock size={14} />
+                            Status finalized
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => openStatusEditor(r)}
+                            className="inline-flex w-36 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                          >
+                            <ClipboardCheck size={14} />
+                            Update status
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -764,7 +827,7 @@ export default function ApplicationsPage() {
                     colSpan={6}
                     className="px-5 py-12 text-center text-emerald-900"
                   >
-                    No matching applications found.
+                    No pending applications found.
                   </td>
                 </tr>
               )}
@@ -785,7 +848,7 @@ export default function ApplicationsPage() {
           <div
             role="dialog"
             aria-modal="true"
-            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-2xl"
+            className="flex h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex shrink-0 items-center justify-between border-b border-emerald-200 bg-white px-5 py-4">
@@ -830,8 +893,20 @@ export default function ApplicationsPage() {
                 <div className="grid gap-2.5 sm:grid-cols-2">
                   <DetailField label="Student Name" value={detail?.name ?? "—"} />
                   <DetailField
+                    label="Learner Reference Number (LRN)"
+                    value={detail?.lrn ?? "—"}
+                  />
+                  <DetailField
+                    label="Extension (Jr., III, etc.)"
+                    value={detail?.extension ?? "—"}
+                  />
+                  <DetailField
                     label="Email Address"
                     value={detail?.email ?? "—"}
+                  />
+                  <DetailField
+                    label="College Course Intended"
+                    value={detail?.collegeCourse ?? "—"}
                   />
                   <DetailField
                     label="Date of Birth"
@@ -851,8 +926,16 @@ export default function ApplicationsPage() {
                     value={detail?.contactNumber ?? "—"}
                   />
                   <DetailField
+                    label="IP Community Member"
+                    value={detail?.isIpCommunityMember ?? "—"}
+                  />
+                  <DetailField
                     label="IP Community / Indigenous Cultural Community"
                     value={detail?.ipCommunityType ?? "—"}
+                  />
+                  <DetailField
+                    label="4Ps Beneficiary"
+                    value={detail?.isFourPsBeneficiary ?? "—"}
                   />
                   <DetailField
                     label="4Ps Household ID"
@@ -867,16 +950,48 @@ export default function ApplicationsPage() {
                     value={detail?.permanentAddress ?? "—"}
                   />
                   <DetailField
+                    label="Same as Current Address"
+                    value={detail?.sameAsCurrentAddress ?? "—"}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  <User size={15} /> Parent / Guardian Information
+                </h3>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <DetailField
                     label="Father's Name"
                     value={detail?.fatherName ?? "—"}
+                  />
+                  <DetailField
+                    label="Father's Middle Name"
+                    value={detail?.fatherMiddleName ?? "—"}
+                  />
+                  <DetailField
+                    label="Father's Contact Number"
+                    value={detail?.fatherContact ?? "—"}
                   />
                   <DetailField
                     label="Mother's Name"
                     value={detail?.motherName ?? "—"}
                   />
                   <DetailField
+                    label="Mother's Middle Name"
+                    value={detail?.motherMiddleName ?? "—"}
+                  />
+                  <DetailField
+                    label="Mother's Contact Number"
+                    value={detail?.motherContact ?? "—"}
+                  />
+                  <DetailField
                     label="Legal Guardian Name"
                     value={detail?.legalGuardianName ?? "—"}
+                  />
+                  <DetailField
+                    label="Legal Guardian Middle Name"
+                    value={detail?.legalGuardianMiddleName ?? "—"}
                   />
                   <DetailField
                     label="Legal Guardian Contact Number"
@@ -895,6 +1010,10 @@ export default function ApplicationsPage() {
                     value={detail?.specialNeedsProgram ?? "—"}
                   />
                   <DetailField
+                    label="Special Needs Group"
+                    value={detail?.specialNeedsGroup ?? "—"}
+                  />
+                  <DetailField
                     label="Special Needs Condition"
                     value={detail?.specialNeedsCondition ?? "—"}
                   />
@@ -903,10 +1022,6 @@ export default function ApplicationsPage() {
                     value={detail?.specialNeedsDetail ?? "—"}
                   />
                   <DetailField label="PWD ID" value={detail?.hasPwdId ?? "—"} />
-                  <DetailField
-                    label="Last Grade Level Completed"
-                    value={detail?.lastGradeLevelCompleted ?? "—"}
-                  />
                   <DetailField
                     label="Last School Year Completed"
                     value={detail?.lastSchoolYearCompleted ?? "—"}
@@ -919,12 +1034,8 @@ export default function ApplicationsPage() {
                     label="Last School ID"
                     value={detail?.lastSchoolId ?? "—"}
                   />
-                  <DetailField
-                    label="Semester"
-                    value={detail?.semester ?? "—"}
-                  />
                   <DetailField label="Track" value={detail?.track ?? "—"} />
-                  <DetailField label="Strand" value={detail?.strand ?? "—"} />
+                  <DetailField label="Cluster" value={detail?.strand ?? "—"} />
                   <DetailField
                     label="Preferred Distance Modalities"
                     value={detail?.preferredModalities ?? "—"}
@@ -980,10 +1091,10 @@ export default function ApplicationsPage() {
             role="dialog"
             aria-modal="true"
             aria-label="Update enrollment status"
-            className="w-full max-w-lg overflow-hidden rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-2xl"
+            className="flex h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between border-b border-emerald-200 bg-white px-5 py-4">
+            <div className="flex shrink-0 items-start justify-between border-b border-emerald-200 bg-white px-5 py-4">
               <div>
                 <h3 className="text-base font-bold text-emerald-900">
                   Update Enrollment Status
@@ -1007,21 +1118,30 @@ export default function ApplicationsPage() {
               </button>
             </div>
 
-            <div className="space-y-4 p-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
               <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800">
                 Enrollment status
                 <select
                   value={statusDraft}
                   onChange={(e) => setStatusDraft(e.target.value)}
-                  disabled={statusSaving}
+                  disabled={statusSaving || statusFinalized}
                   className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-300 disabled:opacity-60"
                 >
                   {ENROLLMENT_STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <option
+                      key={option.value}
+                      value={option.value}
+                      disabled={option.value === "pending"}
+                    >
                       {option.label}
+                      {option.value === "pending" ? " (default)" : ""}
                     </option>
                   ))}
                 </select>
+                <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-emerald-700">
+                  Choose Enrolled or Rejected. Saving is final: the status can
+                  only be updated once and cannot be undone.
+                </span>
               </label>
 
               <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800">
@@ -1032,10 +1152,21 @@ export default function ApplicationsPage() {
                   maxLength={1000}
                   rows={4}
                   placeholder="Optional remarks or rejection reason (e.g. Incomplete Form 138)"
-                  disabled={statusSaving}
+                  disabled={statusSaving || statusFinalized}
                   className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none placeholder:text-emerald-700/60 focus:border-emerald-300 disabled:opacity-60"
                 />
               </label>
+
+              {statusFinalized && (
+                <p className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <Lock size={16} className="shrink-0" />
+                  <span>
+                    This enrollment status has been finalized. Status updates
+                    are allowed only once per student and cannot be undone or
+                    changed.
+                  </span>
+                </p>
+              )}
 
               {statusError && (
                 <p className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
@@ -1051,7 +1182,7 @@ export default function ApplicationsPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-emerald-200 bg-emerald-50 px-5 py-3">
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-emerald-200 bg-emerald-50 px-5 py-3">
               <button
                 type="button"
                 onClick={closeStatusEditor}
@@ -1063,11 +1194,20 @@ export default function ApplicationsPage() {
               <button
                 type="button"
                 onClick={() => void saveStatus()}
-                disabled={statusSaving}
+                disabled={
+                  statusSaving ||
+                  statusFinalized ||
+                  normalizeEnrollmentStatus(statusDraft) === "pending"
+                }
                 className="inline-flex items-center gap-1.5 rounded-lg bg-yellow-300 px-4 py-2 text-xs font-bold text-emerald-950 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {statusSaving ? (
                   "Saving…"
+                ) : statusFinalized ? (
+                  <>
+                    <Lock size={14} />
+                    Status finalized
+                  </>
                 ) : (
                   <>
                     <Save size={14} />

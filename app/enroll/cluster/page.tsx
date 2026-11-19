@@ -282,8 +282,8 @@ function ClusterContent() {
         <footer className="border-t border-emerald-800/70 bg-[#0b3d2e]/60 px-6 py-5 backdrop-blur-sm">
           <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 text-center sm:flex-row sm:text-left">
             <p className="text-xs text-emerald-200 sm:text-sm">
-              © {new Date().getFullYear()} Anselmo A. Sandoval Memorial National
-              High School
+              © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
+
             </p>
             <p className="text-xs text-emerald-300">
               Mabini, Batangas • DepEd Region IV-A CALABARZON

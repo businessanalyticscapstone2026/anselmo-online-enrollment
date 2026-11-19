@@ -143,6 +143,40 @@ export async function POST(request: Request) {
     const previousStatus = normalizeEnrollmentStatus(applicationRecord.status);
     const now = new Date().toISOString();
 
+    // A student's enrollment status may only be updated once. Any status other
+    // than "pending" means a staff member has already finalized the record, so
+    // later changes (including reversing a decision) are rejected.
+    const statusLocked =
+      applicationRecord.status_locked === true || previousStatus !== "pending";
+
+    if (statusLocked) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This student's enrollment status has already been finalized. Only one status update is allowed, and it can no longer be undone or changed.",
+          data: {
+            applicationId,
+            status: previousStatus,
+            statusLabel: getEnrollmentStatusLabel(previousStatus),
+            statusLocked: true,
+          },
+        },
+        { status: 409 }
+      );
+    }
+
+    if (targetStatus === "pending") {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Select Enrolled or Rejected to finalize the enrollment status. Pending is the default status and cannot be saved as an update.",
+        },
+        { status: 400 }
+      );
+    }
+
     const basePayload = {
       status: targetStatus,
       updated_at: now,
@@ -225,7 +259,7 @@ export async function POST(request: Request) {
     const emailConfigured = Boolean(getMailConfig());
     let emailError: string | null = null;
 
-    const statusChanged = previousStatus !== targetStatus;
+    const statusChanged = true;
     const studentEmail = await resolveStudentEmail(
       supabaseAdmin,
       applicationRecord

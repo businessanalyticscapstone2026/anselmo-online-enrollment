@@ -177,8 +177,13 @@ export default function ManageUsersPage() {
         throw new Error(data.error || "Failed to remove user account.");
       }
 
+      const wasStudent =
+        userToDelete.role.trim().toLowerCase() === "student";
+
       setSuccessMessage(
-        `✓ Account for ${userToDelete.fullName} (${userToDelete.email}) was removed successfully. Any enrollment records have been safely preserved.`
+        wasStudent
+          ? `✓ Account for ${userToDelete.fullName} (${userToDelete.email}) was removed successfully. Their enrollment records were removed from all staff dashboards, and they can enroll again in the future.`
+          : `✓ Account for ${userToDelete.fullName} (${userToDelete.email}) was removed successfully. Any enrollment records have been safely preserved.`
       );
 
       // Remove user from local state
@@ -938,9 +943,18 @@ export default function ManageUsersPage() {
               <p className="mt-3 text-[11px] text-emerald-900">
                 ⚠️ This will revoke their portal sign-in credentials.
                 <br />
-                <span className="font-semibold text-emerald-700">
-                  Note: Any submitted student enrollment applications and uploaded documents will be safely preserved.
-                </span>
+                {userToDelete.role.trim().toLowerCase() === "student" ? (
+                  <span className="font-semibold text-emerald-700">
+                    Note: This student&apos;s enrollment records will be removed
+                    from all staff dashboards and enrollment lists. The student
+                    can still enroll again in the future.
+                  </span>
+                ) : (
+                  <span className="font-semibold text-emerald-700">
+                    Note: Any submitted student enrollment applications and
+                    uploaded documents will be safely preserved.
+                  </span>
+                )}
               </p>
             </div>
 

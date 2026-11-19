@@ -357,6 +357,9 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("all");
+  const [summaryStatus, setSummaryStatus] = useState<"enrolled" | "pending">(
+    "enrolled"
+  );
   const [track, setTrack] = useState("all");
   const [reportView, setReportView] = useState<ReportView>("summary");
   const [printSectionId, setPrintSectionId] = useState<string | null>(null);
@@ -423,7 +426,7 @@ export default function ReportsPage() {
     };
   }, [printSectionId]);
 
-  const statusFilter = reportView === "summary" ? "enrolled" : status;
+  const statusFilter = reportView === "summary" ? summaryStatus : status;
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -450,13 +453,9 @@ export default function ReportsPage() {
     });
   }, [rows, statusFilter, track]);
 
-  const summaryRows = useMemo(
-    () =>
-      filtered.filter(
-        (r) => normalizeEnrollmentStatus(r.status) === "enrolled"
-      ),
-    [filtered]
-  );
+  // The enrollment summary respects the selected status filter
+  // (Enrolled or Pending); `filtered` already applies that filter.
+  const summaryRows = filtered;
 
   const genderGroups = useMemo<SectionGenderGroup[]>(() => {
     const sectionsById = new Map<string, SectionRecord>();
@@ -1076,7 +1075,13 @@ export default function ReportsPage() {
           }`}
         >
           {[
-            { label: "Enrolled students", value: summaryRows.length },
+            {
+              label:
+                summaryStatus === "pending"
+                  ? "Pending students"
+                  : "Enrolled students",
+              value: summaryRows.length,
+            },
             {
               label: "Academic",
               value: summaryRows.filter((r) => getRowTrack(r) === "Academic")
@@ -1169,19 +1174,26 @@ export default function ReportsPage() {
                   ? "Gender distribution is grouped by each student's assigned section. Use the filters to narrow the report."
                   : reportView === "analytics"
                     ? "Analytics are computed from current filters. Export includes charts summary and prescriptive insights."
-                    : "Enrollment summary includes enrolled students only. Select a track category before exporting."}
+                    : "Enrollment summary includes Enrolled or Pending students. Choose a status and track category before exporting."}
               </p>
           </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           {reportView === "summary" ? (
-            <div className="text-xs text-emerald-900">
+            <label className="text-xs text-emerald-900">
               Enrollment status
-              <div className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm font-semibold text-emerald-700">
-                Enrolled only
-              </div>
-            </div>
+              <select
+                value={summaryStatus}
+                onChange={(e) =>
+                  setSummaryStatus(e.target.value as "enrolled" | "pending")
+                }
+                className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
+              >
+                <option value="enrolled">Enrolled</option>
+                <option value="pending">Pending</option>
+              </select>
+            </label>
           ) : (
             <label className="text-xs text-emerald-900">
               Enrollment status
@@ -1240,7 +1252,7 @@ export default function ReportsPage() {
               ? "CSV lists each section with its adviser and students grouped Male • Female • Unspecified. PDF opens the print dialog (choose Save as PDF)."
               : reportView === "analytics"
                 ? "CSV exports dashboard analytics (status, cluster, gender, track) and prescriptive insights. PDF prints this analytics report."
-                : "Exports enrolled students only, with full student details including submitted credentials. PDF opens the print dialog (choose Save as PDF)."}
+                : "Exports the selected status (Enrolled or Pending) with full student details including submitted credentials. PDF opens the print dialog (choose Save as PDF)."}
           </p>
           <button
             onClick={() => window.print()}
@@ -1259,11 +1271,12 @@ export default function ReportsPage() {
             <div>
               <h2 className="font-semibold">Report Preview</h2>
               <p className="mt-1 text-xs text-emerald-800 print:text-gray-500">
-                Showing enrolled students for the selected track.
+                Showing {summaryStatus} students for the selected track.
               </p>
             </div>
             <span className="text-xs text-emerald-700 font-mono print:text-emerald-950">
-              {summaryRows.length} enrolled students
+              {summaryRows.length} {summaryStatus} student
+              {summaryRows.length === 1 ? "" : "s"}
             </span>
           </div>
 
@@ -1309,7 +1322,7 @@ export default function ReportsPage() {
                       colSpan={5}
                       className="px-5 py-10 text-center text-emerald-900 print:text-gray-500"
                     >
-                      No enrolled students match the selected filters.
+                      No {summaryStatus} students match the selected filters.
                     </td>
                   </tr>
                 )}

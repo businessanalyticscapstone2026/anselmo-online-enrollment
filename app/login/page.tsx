@@ -18,6 +18,7 @@ import { normalizeRole, portalAreaForRole } from "@/lib/auth/roles";
 import { hasVerifiedTotpFactor, needsMfaStepUp } from "@/lib/auth/aal";
 import { OtpVerification } from "./_components/OtpVerification";
 import { TotpVerification } from "./_components/TotpVerification";
+import { DeviceVerification } from "./_components/DeviceVerification";
 
 const ERROR_MESSAGES: Record<string, string> = {
   session: "Your session has expired. Please sign in again.",
@@ -25,7 +26,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   mfa: "Please complete the verification step to continue.",
 };
 
-type Stage = "credentials" | "otp" | "totp";
+type Stage = "credentials" | "device" | "otp" | "totp";
 
 function useMediaQuery(query: string): boolean | null {
   const subscribe = useCallback(
@@ -61,6 +62,7 @@ function LoginContent() {
     null
   );
   const [verifiedEmail, setVerifiedEmail] = useState("");
+  const [deviceCooldown, setDeviceCooldown] = useState(0);
 
   const [email, setEmail] = useState(() =>
     typeof window !== "undefined"
@@ -151,6 +153,7 @@ function LoginContent() {
     setStage("credentials");
     setVerifiedArea(null);
     setVerifiedEmail("");
+    setDeviceCooldown(0);
     setPassword("");
     setError(message);
   };
@@ -215,6 +218,84 @@ function LoginContent() {
     } catch {
       return false;
     }
+  };
+
+  const continueAfterDevice = async (area: "staff" | "admin") => {
+    const dailyStatus = await fetchDailyStatus(area);
+
+    if (dailyStatus === "full") {
+      router.replace(area === "admin" ? "/admin" : "/staff/dashboard");
+      router.refresh();
+      return;
+    }
+
+    if (dailyStatus === "email" && area === "admin") {
+      setStage("totp");
+      return;
+    }
+
+    setStage("otp");
+  };
+
+  const checkDeviceTrust = async (
+    area: "staff" | "admin"
+  ): Promise<"trusted" | "untrusted" | "error"> => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      const response = await fetch("/api/auth/device/check", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify({ area }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result.success) {
+        const message =
+          result.error || "Unable to verify this device. Please try again.";
+
+        if (response.status === 401 || response.status === 403) {
+          await handleAuthFailure(message);
+        } else {
+          setError(message);
+          setStage("credentials");
+        }
+
+        return "error";
+      }
+
+      if (result.trusted) {
+        return "trusted";
+      }
+
+      const retryAfterSeconds = Number(result.retryAfterSeconds);
+
+      setDeviceCooldown(
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.ceil(retryAfterSeconds)
+          : 0
+      );
+
+      return "untrusted";
+    } catch (deviceError) {
+      console.error("Device check error:", deviceError);
+      setError(
+        "Unable to verify this device. Check your connection and try again."
+      );
+      setStage("credentials");
+      return "error";
+    }
+  };
+
+  const handleDeviceVerified = async () => {
+    if (!verifiedArea) return;
+    await continueAfterDevice(verifiedArea);
   };
 
   const handleCredentialsSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -408,20 +489,18 @@ function LoginContent() {
       setVerifiedEmail(cleanEmail);
       setVerifiedArea(actualArea);
 
-      const dailyStatus = await fetchDailyStatus(actualArea);
+      const deviceStatus = await checkDeviceTrust(actualArea);
 
-      if (dailyStatus === "full") {
-        router.replace(actualArea === "admin" ? "/admin" : "/staff/dashboard");
-        router.refresh();
+      if (deviceStatus === "error") {
         return;
       }
 
-      if (dailyStatus === "email" && actualArea === "admin") {
-        setStage("totp");
+      if (deviceStatus === "untrusted") {
+        setStage("device");
         return;
       }
 
-      setStage("otp");
+      await continueAfterDevice(actualArea);
     } catch (submitError) {
       console.error("Sign-in error:", submitError);
       setError(
@@ -648,9 +727,8 @@ function LoginContent() {
                             transform: `scale(${captchaScale})`,
                             transformOrigin: "top left",
                           }}
-                          className={`transition-opacity duration-300 ease-out ${
-                            captchaReady ? "opacity-100" : "opacity-0"
-                          }`}
+                          className={`transition-opacity duration-300 ease-out ${captchaReady ? "opacity-100" : "opacity-0"
+                            }`}
                         >
                           <ReCAPTCHA
                             ref={captchaRef}
@@ -709,6 +787,17 @@ function LoginContent() {
               </>
             )}
 
+            {stage === "device" && verifiedArea && (
+              <DeviceVerification
+                area={verifiedArea}
+                email={verifiedEmail}
+                initialCooldown={deviceCooldown}
+                onVerified={handleDeviceVerified}
+                onBack={handleBackToCredentials}
+                onAuthFailure={handleAuthFailure}
+              />
+            )}
+
             {stage === "otp" && verifiedArea && (
               <OtpVerification
                 area={verifiedArea}
@@ -729,8 +818,7 @@ function LoginContent() {
         </div>
 
         <footer className="border-t border-emerald-800 bg-[#0b3d2e]/60 px-6 py-4 text-center text-xs text-emerald-200">
-          © {new Date().getFullYear()} Anselmo A. Sandoval Memorial National High
-          School
+          © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
         </footer>
       </div>
     </main>

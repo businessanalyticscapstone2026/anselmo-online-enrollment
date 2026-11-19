@@ -4,6 +4,10 @@ import {
   normalizeTrack,
   type TrackValue,
 } from "@/lib/clusters";
+import {
+  normalizeEnrollmentStatus,
+  type EnrollmentStatus,
+} from "@/lib/enrollmentStatus";
 
 export type ApplicationRecord = Record<string, unknown> & {
   id?: string | number;
@@ -341,4 +345,267 @@ export function buildWeeklyTrackTrend(
 
 export function getTrackLabelShort(track: TrackValue): string {
   return getTrackConfig(track)?.shortLabel ?? track;
+}
+
+export function getStatus(record: ApplicationRecord): EnrollmentStatus {
+  return normalizeEnrollmentStatus(record.status);
+}
+
+export function getBarangay(record: ApplicationRecord): string {
+  const details = asRecord(record.student_details);
+  return (
+    readText(record, ["current_barangay", "barangay"]) ||
+    readText(details, ["current_barangay", "barangay"])
+  );
+}
+
+export function getMunicipality(record: ApplicationRecord): string {
+  const details = asRecord(record.student_details);
+  return (
+    readText(record, ["current_municipality", "municipality", "city"]) ||
+    readText(details, ["current_municipality", "municipality", "city"])
+  );
+}
+
+export function getCollegeCourse(record: ApplicationRecord): string {
+  const details = asRecord(record.student_details);
+  return (
+    readText(record, ["college_course", "collegeCourse"]) ||
+    readText(details, ["college_course"])
+  );
+}
+
+export function getAssignedSectionId(record: ApplicationRecord): string {
+  return readText(record, ["assigned_section_id"]);
+}
+
+export function hasRequirements(record: ApplicationRecord): boolean {
+  if (record.requirements_submitted === true) return true;
+
+  const urls = [
+    "report_card_url",
+    "birth_certificate_url",
+    "other_requirement_url",
+  ];
+
+  if (
+    urls.some((key) => {
+      const value = record[key];
+      return typeof value === "string" && value.trim().length > 0;
+    })
+  ) {
+    return true;
+  }
+
+  const documents = asRecord(record.requirements_documents);
+  if (!documents) return false;
+
+  return Object.entries(documents).some(
+    ([key, value]) =>
+      key !== "student_email" &&
+      typeof value === "string" &&
+      value.trim().length > 0
+  );
+}
+
+export function hasIpCommunity(record: ApplicationRecord): boolean {
+  const details = asRecord(record.student_details);
+  return Boolean(
+    readText(record, ["ip_community_type"]) ||
+      readText(details, ["ip_community_type"])
+  );
+}
+
+export function hasFourPs(record: ApplicationRecord): boolean {
+  const details = asRecord(record.student_details);
+  return Boolean(
+    readText(record, ["four_ps_household_id"]) ||
+      readText(details, ["four_ps_household_id"])
+  );
+}
+
+export function hasSpecialNeeds(record: ApplicationRecord): boolean {
+  return record.special_needs_program === true;
+}
+
+export function hasPwdId(record: ApplicationRecord): boolean {
+  return record.has_pwd_id === true;
+}
+
+export type CountDatum = {
+  label: string;
+  value: number;
+  percentage: number;
+};
+
+export function buildCountBreakdown(
+  applications: ApplicationRecord[],
+  getValue: (record: ApplicationRecord) => string,
+  limit = 8
+): { data: CountDatum[]; total: number; other: number } {
+  const counts = new Map<string, number>();
+
+  for (const application of applications) {
+    const value = getValue(application).trim();
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  const total = Array.from(counts.values()).reduce(
+    (sum, value) => sum + value,
+    0
+  );
+
+  const sorted = Array.from(counts.entries()).sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+  );
+
+  const data = sorted.slice(0, limit).map(([label, value]) => ({
+    label,
+    value,
+    percentage: roundPercentage(value, total),
+  }));
+
+  const other = sorted
+    .slice(limit)
+    .reduce((sum, [, value]) => sum + value, 0);
+
+  return { data, total, other };
+}
+
+export type DailyTrendPoint = {
+  key: string;
+  label: string;
+  total: number;
+  enrolled: number;
+  pending: number;
+  rejected: number;
+};
+
+function manilaDateKey(date: Date): string {
+  return date.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+}
+
+export type ClusterTrendPoint = {
+  key: string;
+  label: string;
+  values: Record<string, number>;
+};
+
+export type ClusterTrend = {
+  keys: string[];
+  points: ClusterTrendPoint[];
+  total: number;
+  otherKey: string | null;
+};
+
+export function buildClusterDailyTrend(
+  applications: ApplicationRecord[],
+  days = 14,
+  now = new Date(),
+  maxClusters = 4
+): ClusterTrend {
+  const counts = new Map<string, number>();
+
+  for (const application of applications) {
+    const cluster = getClusterOnly(application);
+    if (cluster) {
+      counts.set(cluster, (counts.get(cluster) ?? 0) + 1);
+    }
+  }
+
+  const ranked = Array.from(counts.entries()).sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+  );
+  const top = ranked.slice(0, Math.max(1, maxClusters)).map(([name]) => name);
+  const topSet = new Set(top);
+  const hasOther = ranked.length > top.length;
+  const otherKey = hasOther ? "Other clusters" : null;
+  const keys = otherKey ? [...top, otherKey] : [...top];
+
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+  const points: ClusterTrendPoint[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (let offset = safeDays - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
+    const key = manilaDateKey(date);
+    const values: Record<string, number> = {};
+    for (const cluster of keys) values[cluster] = 0;
+
+    indexByKey.set(key, points.length);
+    points.push({
+      key,
+      label: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: "Asia/Manila",
+      }),
+      values,
+    });
+  }
+
+  let total = 0;
+
+  for (const application of applications) {
+    const submitted = getSubmittedDate(application);
+    if (!submitted) continue;
+
+    const index = indexByKey.get(manilaDateKey(submitted));
+    if (index === undefined) continue;
+
+    const cluster = getClusterOnly(application);
+    if (!cluster) continue;
+
+    const seriesKey = topSet.has(cluster) ? cluster : otherKey;
+    if (!seriesKey || !(seriesKey in points[index].values)) continue;
+
+    points[index].values[seriesKey] += 1;
+    total += 1;
+  }
+
+  return { keys, points, total, otherKey };
+}
+
+export function buildDailyTrend(
+  applications: ApplicationRecord[],
+  days = 14,
+  now = new Date()
+): DailyTrendPoint[] {
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+  const points: DailyTrendPoint[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (let offset = safeDays - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
+    const key = manilaDateKey(date);
+
+    indexByKey.set(key, points.length);
+    points.push({
+      key,
+      label: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: "Asia/Manila",
+      }),
+      total: 0,
+      enrolled: 0,
+      pending: 0,
+      rejected: 0,
+    });
+  }
+
+  for (const application of applications) {
+    const submitted = getSubmittedDate(application);
+    if (!submitted) continue;
+
+    const index = indexByKey.get(manilaDateKey(submitted));
+    if (index === undefined) continue;
+
+    const point = points[index];
+    point.total += 1;
+    point[normalizeEnrollmentStatus(application.status)] += 1;
+  }
+
+  return points;
 }

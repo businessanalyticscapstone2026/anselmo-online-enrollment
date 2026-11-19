@@ -6,7 +6,65 @@ export const runtime = "nodejs";
 
 const BUCKET = "enrollment-documents.";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png"]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "jpe",
+  "jfif",
+  "png",
+  "gif",
+  "webp",
+  "bmp",
+  "tif",
+  "tiff",
+  "heic",
+  "heif",
+  "avif",
+  "svg",
+  "ico",
+  "pdf",
+]);
+
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  jpe: "image/jpeg",
+  jfif: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+  ico: "image/x-icon",
+  pdf: "application/pdf",
+};
+
+function getExtension(name: string) {
+  return name.split(".").pop()?.toLowerCase() || "";
+}
+
+function isAllowedFile(file: File) {
+  const type = (file.type || "").toLowerCase();
+  return (
+    type.startsWith("image/") ||
+    type === "application/pdf" ||
+    ALLOWED_EXTENSIONS.has(getExtension(file.name))
+  );
+}
+
+function resolveContentType(file: File) {
+  if (file.type) return file.type;
+  return (
+    CONTENT_TYPE_BY_EXTENSION[getExtension(file.name)] ||
+    "application/octet-stream"
+  );
+}
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -61,8 +119,11 @@ export async function POST(request: Request) {
       if (item.file.size <= 0 || item.file.size > MAX_FILE_SIZE) {
         return jsonError(`${item.file.name} must be between 1 byte and 10 MB.`, 400);
       }
-      if (!ALLOWED_TYPES.has(item.file.type)) {
-        return jsonError(`${item.file.name} must be a JPG, JPEG, or PNG image.`, 400);
+      if (!isAllowedFile(item.file)) {
+        return jsonError(
+          `${item.file.name} must be an image (JPG, PNG, GIF, WEBP, HEIC, etc.) or a PDF file.`,
+          400
+        );
       }
     }
 
@@ -119,7 +180,10 @@ export async function POST(request: Request) {
 
       const { data, error } = await supabase.storage
         .from(BUCKET)
-        .upload(path, bytes, { contentType: item.file.type, upsert: false });
+        .upload(path, bytes, {
+          contentType: resolveContentType(item.file),
+          upsert: false,
+        });
 
       if (error) {
         console.error("Storage upload failed:", error.message);

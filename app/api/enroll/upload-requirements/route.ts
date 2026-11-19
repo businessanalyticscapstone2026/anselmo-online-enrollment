@@ -3,14 +3,67 @@ import { createClient } from "@supabase/supabase-js";
 import { logActivity } from "@/lib/activityLog";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/jpeg", "image/png"];
-const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png"];
+
+// Accept every image type (camera photos may be HEIC/HEIF/WEBP, etc.) as well
+// as PDF documents. Validation is by MIME type first, then by file extension
+// for browsers that send an empty or generic content type.
+const ALLOWED_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "jpe",
+  "jfif",
+  "png",
+  "gif",
+  "webp",
+  "bmp",
+  "tif",
+  "tiff",
+  "heic",
+  "heif",
+  "avif",
+  "svg",
+  "ico",
+  "pdf",
+]);
+
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  jpe: "image/jpeg",
+  jfif: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+  ico: "image/x-icon",
+  pdf: "application/pdf",
+};
+
+function getExtension(file: File) {
+  return file.name.split(".").pop()?.toLowerCase() || "";
+}
 
 function isAllowedFile(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  const type = (file.type || "").toLowerCase();
+  const extension = getExtension(file);
+
   return (
-    ALLOWED_TYPES.includes(file.type) ||
-    ALLOWED_EXTENSIONS.includes(extension)
+    type.startsWith("image/") ||
+    type === "application/pdf" ||
+    ALLOWED_EXTENSIONS.has(extension)
+  );
+}
+
+function resolveContentType(file: File) {
+  if (file.type) return file.type;
+  return (
+    CONTENT_TYPE_BY_EXTENSION[getExtension(file)] || "application/octet-stream"
   );
 }
 
@@ -57,7 +110,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: `${file.name}: only JPG, JPEG, and PNG image files are accepted.`,
+            error: `${file.name}: only image files (JPG, PNG, GIF, WEBP, HEIC, etc.) or PDF files are accepted.`,
           },
           { status: 400 }
         );
@@ -362,7 +415,7 @@ export async function POST(request: Request) {
       const { data, error } = await supabaseAdmin.storage
         .from(targetBucket)
         .upload(filePath, buffer, {
-          contentType: file.type || "application/octet-stream",
+          contentType: resolveContentType(file),
           upsert: true,
         });
 

@@ -1396,7 +1396,7 @@ function FormContent() {
               </h4>
               <p className="mb-5 text-sm leading-relaxed text-gray-700">
                 If the school will implement other distance learning modalities aside
-                from face-to-face instruction, what would you prefer for your child?
+                from face-to-face instruction, what would you prefer?
                 Check all that apply. <span className="text-red-600">*</span>
               </p>
 
@@ -1409,40 +1409,6 @@ function FormContent() {
                     onChange={() => toggleModality(modality)}
                   />
                 ))}
-              </div>
-            </section>
-
-            {/* CERTIFICATION */}
-            <section className="mb-10">
-              <h4 className="mb-5 flex items-center gap-2 border-b border-gray-200 pb-3 text-lg font-bold text-emerald-900 sm:text-xl">
-                Certification
-              </h4>
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-5 sm:p-6">
-                <p className="text-sm leading-relaxed text-gray-700">
-                  I hereby certify that the above information given are true and correct
-                  to the best of my knowledge and I allow the Department of Education to
-                  use my child&apos;s details to create and/or update his/her learner
-                  profile in the Learner Information System.
-                </p>
-                <p className="mt-3 text-xs leading-relaxed text-gray-600">
-                  The information herein shall be treated as confidential in compliance
-                  with the Data Privacy Act of 2012.
-                </p>
-
-                <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3.5">
-                  <input
-                    type="checkbox"
-                    checked={certificationAccepted}
-                    disabled={isSubmitting}
-                    onChange={(e) => setCertificationAccepted(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-emerald-700 focus:ring-1 focus:ring-yellow-300"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    I certify and agree to the statement above.{" "}
-                    <span className="text-red-600">*</span>
-                  </span>
-                </label>
               </div>
             </section>
 
@@ -1601,7 +1567,7 @@ function FormContent() {
         <footer className="border-t border-emerald-800/70 bg-[#0b3d2e]/60 px-6 py-5 backdrop-blur-sm">
           <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 text-center sm:flex-row sm:text-left">
             <p className="text-xs text-emerald-200 sm:text-sm">
-              © {new Date().getFullYear()} Anselmo A. Sandoval Memorial National High School
+              © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
             </p>
             <p className="text-xs text-emerald-300">
               Mabini, Batangas • DepEd Region IV-A CALABARZON

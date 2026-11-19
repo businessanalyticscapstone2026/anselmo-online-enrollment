@@ -11,6 +11,7 @@ import {
   Files,
   Users,
   FileSpreadsheet,
+  BarChart3,
   LogOut,
   Menu,
   X,
@@ -22,6 +23,11 @@ const navItems = [
     label: "Dashboard",
     icon: LayoutDashboard,
     exact: true,
+  },
+  {
+    href: "/staff/dashboard/analytics",
+    label: "Analytics",
+    icon: BarChart3,
   },
   {
     href: "/staff/dashboard/applications",
@@ -202,8 +208,7 @@ export default function StaffDashboardShell({
           {children}
         </div>
         <footer className="fixed bottom-0 left-0 right-0 z-20 border-t border-[#c3e2cd] bg-[#eaf5ec]/95 px-6 py-3 text-center text-[10px] text-[#3f5f50] backdrop-blur lg:left-67.5">
-          © {new Date().getFullYear()} Anselmo A. Sandoval Memorial National High
-          School
+          © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
         </footer>
       </main>
 

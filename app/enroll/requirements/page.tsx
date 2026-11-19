@@ -9,18 +9,43 @@ import { Camera, FileText, Upload, X } from "lucide-react";
 import EnrollmentProgress from "@/app/_components/EnrollmentProgress";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png"];
-const ALLOWED_FILE_EXTENSIONS = ["jpg", "jpeg", "png"];
+const ALLOWED_FILE_EXTENSIONS = [
+    "jpg",
+    "jpeg",
+    "jpe",
+    "jfif",
+    "png",
+    "gif",
+    "webp",
+    "bmp",
+    "tif",
+    "tiff",
+    "heic",
+    "heif",
+    "avif",
+    "svg",
+    "ico",
+    "pdf",
+];
+
+function isAllowedFile(file: File) {
+    const type = (file.type || "").toLowerCase();
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+
+    return (
+        type.startsWith("image/") ||
+        type === "application/pdf" ||
+        ALLOWED_FILE_EXTENSIONS.includes(extension)
+    );
+}
 
 function validateFile(file: File | null, label: string) {
     if (!file) return;
 
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (
-        !ALLOWED_FILE_TYPES.includes(file.type) &&
-        !ALLOWED_FILE_EXTENSIONS.includes(extension)
-    ) {
-        throw new Error(`${label}: only JPG, JPEG, and PNG image files are accepted.`);
+    if (!isAllowedFile(file)) {
+        throw new Error(
+            `${label}: only image files (JPG, PNG, GIF, WEBP, HEIC, etc.) or PDF files are accepted.`
+        );
     }
 
     if (file.size > MAX_FILE_SIZE) {
@@ -270,8 +295,9 @@ export default function RequirementsPage() {
                             </h3>
                             <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-emerald-700/90 sm:text-base">
                                 Take a photo of your documents or upload clear copies.
-                                Files must be JPG, JPEG, or PNG images and must not
-                                exceed 10 MB each.
+                                Any image type is accepted (JPG, PNG, GIF, WEBP, HEIC,
+                                etc.) as well as PDF files. Each file must not exceed
+                                10 MB.
                             </p>
                         </div>
                     </div>
@@ -440,8 +466,7 @@ export default function RequirementsPage() {
                 <footer className="border-t border-emerald-800/70 bg-[#0b3d2e]/60 px-6 py-5 backdrop-blur-sm">
                     <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 text-center sm:flex-row sm:text-left">
                         <p className="text-xs text-emerald-200 sm:text-sm">
-                            © {new Date().getFullYear()} Anselmo A. Sandoval Memorial
-                            National High School
+                            © {new Date().getFullYear()} Capstone Project - BatStateU Mabini Campus
                         </p>
                         <p className="text-xs text-emerald-300">
                             Mabini, Batangas • DepEd Region IV-A CALABARZON
@@ -634,7 +659,7 @@ function UploadField({
                     ref={inputRef}
                     id={id}
                     type="file"
-                    accept=".jpg,.jpeg,.png"
+                    accept="image/*,application/pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif,.svg,.pdf"
                     className="sr-only"
                     onChange={(event) =>
                         onChange(event.target.files?.[0] ?? null)
@@ -704,8 +729,8 @@ function UploadField({
                                 </label>
                             </div>
                             <p className="mt-1 text-xs leading-5 text-gray-500">
-                                Take a photo with your camera or choose a JPG/PNG ·
-                                max 10 MB
+                                Take a photo with your camera or choose any image or
+                                PDF · max 10 MB
                             </p>
                         </div>
                     </div>
