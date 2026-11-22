@@ -61,6 +61,15 @@ const GENDER_COLORS: Record<string, string> = {
 
 const GENDER_ORDER = ["Male", "Female", "Other"] as const;
 
+const AGE_BANDS: { label: string; min: number; max: number }[] = [
+  { label: "15 and below", min: 0, max: 15 },
+  { label: "16", min: 16, max: 16 },
+  { label: "17", min: 17, max: 17 },
+  { label: "18", min: 18, max: 18 },
+  { label: "19", min: 19, max: 19 },
+  { label: "20 and above", min: 20, max: 120 },
+];
+
 const TRACK_COLORS: Record<TrackValue, string> = {
   academic: "#c8b27c",
   techpro: "#6ba8c7",
@@ -110,6 +119,37 @@ export function getGender(record: ApplicationRecord): string | null {
   if (["f", "female", "woman", "girl"].includes(normalized)) return "Female";
 
   return "Other";
+}
+
+export function getAge(record: ApplicationRecord): number | null {
+  const details = asRecord(record.student_details);
+  const raw = readText(record, ["age"]) || readText(details, ["age"]);
+
+  if (raw) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 120) {
+      return Math.trunc(parsed);
+    }
+  }
+
+  const birth =
+    readText(record, ["birth_date", "birthDate"]) ||
+    readText(details, ["birth_date", "birthDate"]);
+
+  if (!birth) return null;
+
+  const date = new Date(birth.length === 10 ? `${birth}T00:00:00` : birth);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+    age -= 1;
+  }
+
+  return age >= 0 && age <= 120 ? age : null;
 }
 
 export function getClusterOnly(record: ApplicationRecord): string {
@@ -204,6 +244,46 @@ export function buildGenderBreakdown(applications: ApplicationRecord[]) {
     data,
     total,
     unrecorded: Math.max(applications.length - total, 0),
+  };
+}
+
+export function buildAgeBreakdown(applications: ApplicationRecord[]) {
+  const counts = new Map<string, number>();
+  let sum = 0;
+  let recorded = 0;
+
+  for (const application of applications) {
+    const age = getAge(application);
+    if (age === null) continue;
+
+    recorded += 1;
+    sum += age;
+
+    const band = AGE_BANDS.find(
+      (item) => age >= item.min && age <= item.max
+    );
+    if (band) {
+      counts.set(band.label, (counts.get(band.label) ?? 0) + 1);
+    }
+  }
+
+  const data: CountDatum[] = AGE_BANDS.filter((band) =>
+    counts.has(band.label)
+  ).map((band) => {
+    const value = counts.get(band.label) ?? 0;
+
+    return {
+      label: band.label,
+      value,
+      percentage: roundPercentage(value, recorded),
+    };
+  });
+
+  return {
+    data,
+    total: recorded,
+    unrecorded: Math.max(applications.length - recorded, 0),
+    average: recorded > 0 ? Math.round((sum / recorded) * 10) / 10 : 0,
   };
 }
 

@@ -87,6 +87,34 @@ const guardianName = (info: GuardianInfo | null): string =>
     ? [info.firstName, info.middleName, info.lastName].filter(Boolean).join(" ")
     : "";
 
+const formatAge = (record: AppRecord, details: AppRecord): string => {
+  const direct = record.age ?? details.age;
+
+  if (typeof direct === "number" && Number.isFinite(direct)) {
+    return String(Math.trunc(direct));
+  }
+
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+
+  const birth = firstText([record.birth_date, details.birth_date]);
+  if (!birth) return "—";
+
+  const date = new Date(birth.length === 10 ? `${birth}T00:00:00` : birth);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+    age -= 1;
+  }
+
+  return age >= 0 ? String(age) : "—";
+};
+
 const getCluster = (record: AppRecord) => {
   const direct = firstText([
     record.selected_cluster,
@@ -199,6 +227,9 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"pending" | "enrolled">(
+    "pending"
+  );
   const [selected, setSelected] = useState<AppRecord | null>(null);
   const [previewFile, setPreviewFile] = useState<{ label: string; url: string } | null>(null);
   const [statusTarget, setStatusTarget] = useState<AppRecord | null>(null);
@@ -208,39 +239,49 @@ export default function ApplicationsPage() {
   const [statusError, setStatusError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
-  const load = useCallback(async (showLoading = true) => {
-    if (showLoading) {
-      setLoading(true);
-    }
-    setError("");
-
-    try {
-      const { data, error: fetchErr } = await supabase
-        .from("student_applications")
-        .select("*")
-        .order("submitted_at", { ascending: false })
-        .limit(1000);
-
-      if (fetchErr) {
-        setError(fetchErr.message);
-      } else {
-        // This module only reviews applications that are still pending and
-        // whose credentials have already been delivered to the student.
-        // Enrolled and rejected records are excluded once their status is finalized.
-        setRecords(
-          filterVisibleApplications((data ?? []) as AppRecord[]).filter(
-            (record) => !isStatusFinalized(record)
-          )
-        );
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error loading applications");
-    } finally {
+  const load = useCallback(
+    async (
+      showLoading = true,
+      filter: "pending" | "enrolled" = statusFilter
+    ) => {
       if (showLoading) {
-        setLoading(false);
+        setLoading(true);
       }
-    }
-  }, []);
+      setError("");
+
+      try {
+        const { data, error: fetchErr } = await supabase
+          .from("student_applications")
+          .select("*")
+          .order("submitted_at", { ascending: false })
+          .limit(1000);
+
+        if (fetchErr) {
+          setError(fetchErr.message);
+        } else {
+          const visibleRecords = filterVisibleApplications(
+            (data ?? []) as AppRecord[]
+          );
+          setRecords(
+            visibleRecords.filter((record) =>
+              filter === "enrolled"
+                ? normalizeEnrollmentStatus(record.status) === "enrolled"
+                : !isStatusFinalized(record)
+            )
+          );
+        }
+      } catch (err: unknown) {
+        setError(
+          err instanceof Error ? err.message : "Error loading applications"
+        );
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
+      }
+    },
+    [statusFilter]
+  );
 
   const openStatusEditor = (record: AppRecord) => {
     if (isStatusFinalized(record)) return;
@@ -394,8 +435,9 @@ export default function ApplicationsPage() {
     let cancelled = false;
     let reloadTimeout: number | undefined;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
+    const initialLoad = window.setTimeout(() => {
+      void load(true, statusFilter);
+    }, 0);
 
     const scheduleReload = () => {
       if (cancelled) return;
@@ -406,7 +448,7 @@ export default function ApplicationsPage() {
 
       reloadTimeout = window.setTimeout(() => {
         reloadTimeout = undefined;
-        void load(false);
+        void load(false, statusFilter);
       }, 400);
     };
 
@@ -434,6 +476,7 @@ export default function ApplicationsPage() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(initialLoad);
 
       if (reloadTimeout) {
         window.clearTimeout(reloadTimeout);
@@ -441,7 +484,7 @@ export default function ApplicationsPage() {
 
       supabase.removeChannel(channel);
     };
-  }, [load]);
+  }, [load, statusFilter]);
 
   const filtered = useMemo(
     () =>
@@ -570,6 +613,7 @@ export default function ApplicationsPage() {
       collegeCourse:
         firstText([selected.college_course, details.college_course]) || "—",
       birthDate: firstText([selected.birth_date]),
+      age: formatAge(selected, details),
       placeOfBirth: firstText([
         selected.place_of_birth,
         details.place_of_birth,
@@ -720,31 +764,54 @@ export default function ApplicationsPage() {
           />
         </div>
 
-        <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-3 text-xs font-semibold text-emerald-700">
+        <label className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-3 text-xs font-semibold text-emerald-700">
           <Clock3 size={14} />
-          Pending applications only
-        </span>
+          <span className="sr-only">Filter applications by status</span>
+          <select
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as "pending" | "enrolled")
+            }
+            className="bg-transparent text-xs font-semibold text-emerald-700 outline-none"
+            aria-label="Filter applications by status"
+          >
+            <option value="pending">Pending</option>
+            <option value="enrolled">Enrolled</option>
+          </select>
+        </label>
       </div>
 
       {/* Applications Table */}
       <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
         <div className="flex items-center justify-between border-b border-emerald-200 px-5 py-4">
-          <h2 className="font-semibold">Pending Applications</h2>
+          <h2 className="font-semibold">
+            {statusFilter === "enrolled"
+              ? "Enrolled Applications"
+              : "Pending Applications"}
+          </h2>
           <span className="text-xs text-emerald-700 font-mono">
             {filtered.length} record{filtered.length === 1 ? "" : "s"}
           </span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-225 text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[18%]" />
+              <col className="w-[20%]" />
+              <col className="w-[12%]" />
+              <col className="w-[10%]" />
+              <col className="w-[18%]" />
+            </colgroup>
             <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900">
               <tr>
-                <th className="px-5 py-3">Student</th>
-                <th className="px-5 py-3">Cluster</th>
-                <th className="px-5 py-3">Contact</th>
-                <th className="px-5 py-3">Submitted</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Review</th>
+                <th className="px-3 py-3">Student</th>
+                <th className="px-3 py-3">Cluster</th>
+                <th className="px-3 py-3">Contact</th>
+                <th className="px-3 py-3">Submitted</th>
+                <th className="px-3 py-3">Status</th>
+                <th className="px-3 py-3">Review</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-200/10">
@@ -752,7 +819,7 @@ export default function ApplicationsPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-5 py-12 text-center text-emerald-900"
+                    className="px-3 py-12 text-center text-emerald-900"
                   >
                     Loading student records…
                   </td>
@@ -760,7 +827,7 @@ export default function ApplicationsPage() {
               ) : filtered.length > 0 ? (
                 filtered.map((r) => (
                   <tr key={String(r.id)} className="hover:bg-emerald-50">
-                    <td className="px-5 py-4">
+                    <td className="wrap-break-word px-3 py-4">
                       <p className="font-semibold">
                         {[r.first_name, r.middle_name, r.last_name]
                           .filter(Boolean)
@@ -771,30 +838,30 @@ export default function ApplicationsPage() {
                         {String(r.id).slice(0, 8)}
                       </p>
                     </td>
-                    <td className="px-5 py-4 text-xs font-semibold text-emerald-700">
+                    <td className="wrap-break-word px-3 py-4 text-xs font-semibold text-emerald-700">
                       {formatCluster(getCluster(r))}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                       <p>{String(r.email || "—")}</p>
                       <p className="text-[11px] text-emerald-800">
                         {String(r.contact_number || "")}
                       </p>
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                       {r.submitted_at
                         ? new Date(String(r.submitted_at)).toLocaleDateString()
                         : "—"}
                     </td>
-                    <td className="px-5 py-4">
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] capitalize">
+                    <td className="px-3 py-4">
+                      <span className="inline-block rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] capitalize">
                         {getEnrollmentStatusLabel(r.status)}
                       </span>
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <td className="px-3 py-4">
+                      <div className="flex flex-col items-stretch gap-2">
                         <button
                           onClick={() => setSelected(r)}
-                          className="inline-flex w-36 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-amber-50"
+                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-2 py-2 text-xs font-semibold text-emerald-700 hover:bg-amber-50"
                         >
                           <Eye size={14} />
                           View record
@@ -802,15 +869,15 @@ export default function ApplicationsPage() {
                         {isStatusFinalized(r) ? (
                           <span
                             title="Enrollment status updates are limited to one per student and cannot be changed."
-                            className="inline-flex w-36 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800"
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-100 px-2 py-2 text-center text-xs font-semibold text-emerald-800"
                           >
-                            <Lock size={14} />
+                            <Lock size={14} className="shrink-0" />
                             Status finalized
                           </span>
                         ) : (
                           <button
                             onClick={() => openStatusEditor(r)}
-                            className="inline-flex w-36 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-2 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
                           >
                             <ClipboardCheck size={14} />
                             Update status
@@ -824,9 +891,11 @@ export default function ApplicationsPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-5 py-12 text-center text-emerald-900"
+                    className="px-3 py-12 text-center text-emerald-900"
                   >
-                    No pending applications found.
+                    {statusFilter === "enrolled"
+                      ? "No enrolled applications found."
+                      : "No pending applications found."}
                   </td>
                 </tr>
               )}
@@ -911,6 +980,7 @@ export default function ApplicationsPage() {
                     label="Date of Birth"
                     value={detail?.birthDate ?? "—"}
                   />
+                  <DetailField label="Age" value={detail?.age ?? "—"} />
                   <DetailField
                     label="Place of Birth"
                     value={detail?.placeOfBirth ?? "—"}

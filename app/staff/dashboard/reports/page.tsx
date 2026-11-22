@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { getTrackLabel } from "@/lib/clusters";
+import { getClustersForTrack, getTrackLabel, TRACKS } from "@/lib/clusters";
 import {
   getEnrollmentStatusLabel,
   normalizeEnrollmentStatus,
@@ -362,6 +362,7 @@ export default function ReportsPage() {
     "enrolled"
   );
   const [track, setTrack] = useState("all");
+  const [cluster, setCluster] = useState("all");
   const [reportView, setReportView] = useState<ReportView>("summary");
   const [printSectionId, setPrintSectionId] = useState<string | null>(null);
   const printTimestampRef = useRef<HTMLSpanElement>(null);
@@ -431,7 +432,17 @@ export default function ReportsPage() {
 
   const statusFilter = reportView === "summary" ? summaryStatus : status;
 
+  const clusterOptions = useMemo(
+    () =>
+      track === "all"
+        ? TRACKS.flatMap((trackConfig) => trackConfig.clusters)
+        : getClustersForTrack(track),
+    [track]
+  );
+
   const filtered = useMemo(() => {
+    const targetCluster = cluster.trim().toLowerCase();
+
     return rows.filter((r) => {
       const rowStatus = normalizeEnrollmentStatus(r.status);
       const statusMatches = statusFilter === "all" || rowStatus === statusFilter;
@@ -452,9 +463,13 @@ export default function ReportsPage() {
         );
       }
 
-      return statusMatches && trackMatches;
+      const clusterMatches =
+        cluster === "all" ||
+        getRowCluster(r).trim().toLowerCase() === targetCluster;
+
+      return statusMatches && trackMatches && clusterMatches;
     });
-  }, [rows, statusFilter, track]);
+  }, [rows, statusFilter, track, cluster]);
 
   // The enrollment summary respects the selected status filter
   // (Enrolled or Pending); `filtered` already applies that filter.
@@ -630,7 +645,17 @@ export default function ReportsPage() {
   function exportAnalyticsCsv() {
     if (!filtered.length && analytics.total === 0) return;
     const date = new Date().toISOString().slice(0, 10);
-    const filterLabel = status === "all" && track === "all" ? "all-records" : `${status}-${track}`;
+    const clusterSlug =
+      cluster === "all"
+        ? ""
+        : `-${cluster
+            .replace(/[^a-z0-9]+/gi, "-")
+            .replace(/^-|-$/g, "")
+            .toLowerCase()}`;
+    const filterLabel =
+      status === "all" && track === "all" && cluster === "all"
+        ? "all-records"
+        : `${status}-${track}${clusterSlug}`;
     const lines: string[] = [];
     const push = (cells: unknown[]) => lines.push(cells.map(csvCell).join(","));
 
@@ -638,6 +663,7 @@ export default function ReportsPage() {
     push(["Generated", new Date().toLocaleString()]);
     push(["Status filter", status]);
     push(["Track filter", track]);
+    push(["Cluster filter", cluster]);
     push([]);
 
     push(["SUMMARY METRICS"]);
@@ -791,10 +817,17 @@ export default function ReportsPage() {
     });
 
     const date = new Date().toISOString().slice(0, 10);
+    const clusterSlug =
+      cluster === "all"
+        ? ""
+        : `-${cluster
+            .replace(/[^a-z0-9]+/gi, "-")
+            .replace(/^-|-$/g, "")
+            .toLowerCase()}`;
     const filterLabel =
-      status === "all" && track === "all"
+      status === "all" && track === "all" && cluster === "all"
         ? "all-records"
-        : `${status}-${track}`;
+        : `${status}-${track}${clusterSlug}`;
 
     downloadCsv(
       `AASMNHS-gender-by-section-${filterLabel}-${date}.csv`,
@@ -1177,12 +1210,12 @@ export default function ReportsPage() {
                   ? "Gender distribution is grouped by each student's assigned section. Use the filters to narrow the report."
                   : reportView === "analytics"
                     ? "Analytics are computed from current filters. Export includes charts summary and prescriptive insights."
-                    : "Enrollment summary includes Enrolled or Pending students. Choose a status and track category before exporting."}
+                    : "Enrollment summary includes Enrolled or Pending students. Choose a status, track category, and cluster before exporting."}
               </p>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {reportView === "summary" ? (
             <label className="text-xs text-emerald-900">
               Enrollment status
@@ -1217,12 +1250,31 @@ export default function ReportsPage() {
             Track category
             <select
               value={track}
-              onChange={(e) => setTrack(e.target.value)}
+              onChange={(e) => {
+                setTrack(e.target.value);
+                setCluster("all");
+              }}
               className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
             >
               <option value="all">All tracks</option>
-              <option value="academic">Academic (STEM, ABM, HUMSS, GAS)</option>
-              <option value="techpro">TechPro (TVL ICT, HE, IA, AFA)</option>
+              <option value="academic">Academic</option>
+              <option value="techpro">TechPro</option>
+            </select>
+          </label>
+
+          <label className="text-xs text-emerald-900">
+            Cluster
+            <select
+              value={cluster}
+              onChange={(e) => setCluster(e.target.value)}
+              className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
+            >
+              <option value="all">All clusters</option>
+              {clusterOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -1274,7 +1326,7 @@ export default function ReportsPage() {
             <div>
               <h2 className="font-semibold">Report Preview</h2>
               <p className="mt-1 text-xs text-emerald-800 print:text-gray-500">
-                Showing {summaryStatus} students for the selected track.
+                Showing {summaryStatus} students for the selected track and cluster.
               </p>
             </div>
             <span className="text-xs text-emerald-700 font-mono print:text-emerald-950">
@@ -1284,37 +1336,44 @@ export default function ReportsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-162.5 text-left text-sm print:text-xs">
+            <table className="w-full table-fixed text-left text-sm print:text-xs">
+              <colgroup>
+                <col className="w-[26%]" />
+                <col className="w-[30%]" />
+                <col className="w-[12%]" />
+                <col className="w-[20%]" />
+                <col className="w-[12%]" />
+              </colgroup>
               <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900 print:bg-gray-100 print:text-gray-700">
                 <tr>
-                  <th className="px-5 py-3">Student Name</th>
-                  <th className="px-5 py-3">Track / Cluster</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Contact</th>
-                  <th className="px-5 py-3">Submitted</th>
+                  <th className="px-3 py-3">Student Name</th>
+                  <th className="px-3 py-3">Track / Cluster</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Contact</th>
+                  <th className="px-3 py-3">Submitted</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-200/10 print:divide-gray-200">
                 {summaryRows.slice(0, 100).map((r) => (
                   <tr key={String(r.id)} className="hover:bg-emerald-50">
-                    <td className="px-5 py-4 font-medium print:py-2">
+                    <td className="wrap-break-word px-3 py-4 font-medium print:py-2">
                       {[r.first_name, r.middle_name, r.last_name]
                         .filter(Boolean)
                         .join(" ") || "Unnamed applicant"}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-700 print:py-2 print:text-emerald-950">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-700 print:py-2 print:text-emerald-950">
                       {getSelectedTrack(r)}
                       {getRowCluster(r) ? ` • ${getRowCluster(r)}` : ""}
                     </td>
-                    <td className="px-5 py-4 text-xs capitalize print:py-2">
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] print:border-gray-400 print:text-emerald-950">
+                    <td className="px-3 py-4 text-xs capitalize print:py-2">
+                      <span className="inline-block rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] print:border-gray-400 print:text-emerald-950">
                         {getEnrollmentStatusLabel(r.status)}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900 print:py-2 print:text-gray-700">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900 print:py-2 print:text-gray-700">
                       {String(r.email || r.contact_number || "—")}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900 print:py-2 print:text-gray-700">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900 print:py-2 print:text-gray-700">
                       {formatDate(r.submitted_at)}
                     </td>
                   </tr>
@@ -1323,7 +1382,7 @@ export default function ReportsPage() {
                   <tr>
                     <td
                       colSpan={5}
-                      className="px-5 py-10 text-center text-emerald-900 print:text-gray-500"
+                      className="px-3 py-10 text-center text-emerald-900 print:text-gray-500"
                     >
                       No {summaryStatus} students match the selected filters.
                     </td>

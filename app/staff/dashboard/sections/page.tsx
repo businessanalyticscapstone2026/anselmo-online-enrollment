@@ -5,7 +5,7 @@ import {
   getEnrollmentStatusLabel,
   normalizeEnrollmentStatus,
 } from "@/lib/enrollmentStatus";
-import { DEFAULT_SECTIONS, type SectionRecord } from "@/lib/sections";
+import { DEFAULT_SECTIONS, getSectionCluster, type SectionRecord } from "@/lib/sections";
 import { TRACKS, getTrackLabel, getClustersForTrack, getTrackForCluster, normalizeTrack, type TrackValue } from "@/lib/clusters";
 import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import { supabase } from "@/lib/supabaseClient";
@@ -98,6 +98,7 @@ export default function SectionsPage() {
     "enrolled"
   );
   const [trackFilter, setTrackFilter] = useState<"all" | TrackValue>("all");
+  const [clusterFilter, setClusterFilter] = useState("");
   const [usingDefaultSections, setUsingDefaultSections] = useState(false);
   const [hasRemoteUpdates, setHasRemoteUpdates] = useState(false);
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -327,7 +328,7 @@ export default function SectionsPage() {
     setEditingSection(null);
     setFormName("");
     setFormAdviser("");
-    setFormGradeLevel("");
+    setFormGradeLevel("Grade 11");
     setFormTrack("");
     setFormStrand("");
     setFormSchoolYear("2025-2026");
@@ -473,10 +474,17 @@ export default function SectionsPage() {
     });
 
     if (trackFilter === "all") return sorted;
-    return sorted.filter(
+    const trackMatched = sorted.filter(
       (a) => normalizeTrack(resolveApplicationTrack(a)) === trackFilter
     );
-  }, [apps, search, trackFilter, statusFilter]);
+
+    if (!clusterFilter) return trackMatched;
+
+    const targetCluster = clusterFilter.trim().toLowerCase();
+    return trackMatched.filter(
+      (a) => resolveApplicationCluster(a).trim().toLowerCase() === targetCluster
+    );
+  }, [apps, search, trackFilter, statusFilter, clusterFilter]);
 
   const sectionsByTrack = useMemo(
     () =>
@@ -582,44 +590,53 @@ export default function SectionsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-212.5 text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[15%]" />
+              <col className="w-[11%]" />
+              <col className="w-[15%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+              <col className="w-[21%]" />
+            </colgroup>
             <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900">
               <tr>
-                <th className="px-5 py-3">Section</th>
-                <th className="px-5 py-3">Adviser</th>
-                <th className="px-5 py-3">Track</th>
-                <th className="px-5 py-3">Grade / Cluster</th>
-                <th className="px-5 py-3">School Year</th>
-                <th className="px-5 py-3">Capacity</th>
-                <th className="px-5 py-3">Actions</th>
+                <th className="px-3 py-3">Section</th>
+                <th className="px-3 py-3">Adviser</th>
+                <th className="px-3 py-3">Track</th>
+                <th className="px-3 py-3">Grade / Cluster</th>
+                <th className="px-3 py-3">School Year</th>
+                <th className="px-3 py-3">Capacity</th>
+                <th className="px-3 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-200/10">
               {sectionsByTrack.length > 0 ? (
                 sectionsByTrack.map((s) => (
                   <tr key={String(s.id)} className="hover:bg-emerald-50">
-                    <td className="px-5 py-4 font-semibold">{s.name}</td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="wrap-break-word px-3 py-4 font-semibold">{s.name}</td>
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                       {s.adviser_name || (
                         <span className="text-emerald-800">Not assigned</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                       {resolveSectionTrack(s) ? (
                         getTrackLabel(resolveSectionTrack(s))
                       ) : (
                         <span className="text-emerald-800">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                       {[s.grade_level, s.strand ?? s.cluster]
                         .filter(Boolean)
                         .join(" · ") || "—"}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                       {s.school_year || "—"}
                     </td>
-                    <td className="px-5 py-4 text-xs text-emerald-900">
+                    <td className="px-3 py-4 text-xs text-emerald-900">
                       <span className="font-semibold text-emerald-700">
                         {assignedCount(s.id)}
                       </span>
@@ -628,18 +645,18 @@ export default function SectionsPage() {
                         {s.capacity ?? "—"}
                       </span>
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-2">
+                    <td className="px-3 py-4">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           onClick={() => openEditSection(s)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
                         >
                           <Pencil size={13} />
                           Edit
                         </button>
                         <button
                           onClick={() => requestDelete(s)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
                         >
                           <Trash2 size={13} />
                           Delete
@@ -652,7 +669,7 @@ export default function SectionsPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-5 py-10 text-center text-emerald-900"
+                    className="px-3 py-10 text-center text-emerald-900"
                   >
                     No sections yet. Use &ldquo;Add Section&rdquo; to create one.
                   </td>
@@ -742,7 +759,10 @@ export default function SectionsPage() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => setTrackFilter(option.value)}
+                onClick={() => {
+                  setTrackFilter(option.value);
+                  setClusterFilter("");
+                }}
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                   active
                     ? "border-emerald-400 bg-emerald-600 text-white"
@@ -760,25 +780,52 @@ export default function SectionsPage() {
               </button>
             );
           })}
+          {trackFilter !== "all" && (
+            <label className="ml-auto flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+              Cluster
+              <select
+                value={clusterFilter}
+                onChange={(e) => setClusterFilter(e.target.value)}
+                aria-label="Filter by cluster"
+                className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold normal-case tracking-normal text-emerald-800 outline-none focus:border-emerald-400"
+              >
+                <option value="">All clusters</option>
+                {getClustersForTrack(trackFilter).map((cluster) => (
+                  <option key={cluster} value={cluster}>
+                    {cluster}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-250 text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[23%]" />
+              <col className="w-[11%]" />
+              <col className="w-[13%]" />
+              <col className="w-[9%]" />
+              <col className="w-[20%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+            </colgroup>
             <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900">
               <tr>
-                <th className="px-5 py-3">Student</th>
-                <th className="px-5 py-3">Track</th>
-                <th className="px-5 py-3">Cluster</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Section</th>
-                <th className="px-5 py-3">Adviser</th>
-                <th className="px-5 py-3">Action</th>
+                <th className="px-3 py-3">Student</th>
+                <th className="px-3 py-3">Track</th>
+                <th className="px-3 py-3">Cluster</th>
+                <th className="px-3 py-3">Status</th>
+                <th className="px-3 py-3">Section</th>
+                <th className="px-3 py-3">Adviser</th>
+                <th className="px-3 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-200/10">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="animate-pulse-soft px-5 py-10 text-center text-emerald-900">
+                  <td colSpan={7} className="animate-pulse-soft px-3 py-10 text-center text-emerald-900">
                     Loading applicants…
                   </td>
                 </tr>
@@ -795,30 +842,52 @@ export default function SectionsPage() {
                     resolveApplicationCluster(a) ||
                     (selected ? selected.strand ?? selected.cluster ?? "" : "");
                   const studentTrackValue = normalizeTrack(studentTrack);
-                  const matchingSections = studentTrackValue
-                    ? sectionsByTrack.filter(
-                        (s) =>
-                          normalizeTrack(resolveSectionTrack(s)) ===
-                          studentTrackValue
-                      )
-                    : sectionsByTrack;
+                  const normalizedStudentCluster = studentCluster
+                    .trim()
+                    .toLowerCase();
+                  const matchingSections = sectionsByTrack.filter((s) => {
+                    const sectionTrack = normalizeTrack(resolveSectionTrack(s));
+                    const sectionCluster = getSectionCluster(s)
+                      .trim()
+                      .toLowerCase();
+
+                    if (normalizedStudentCluster) {
+                      return sectionCluster === normalizedStudentCluster;
+                    }
+
+                    if (studentTrackValue) {
+                      return sectionTrack === studentTrackValue;
+                    }
+
+                    return true;
+                  });
+                  const sectionGroups = matchingSections.reduce<
+                    Array<{ cluster: string; sections: Section[] }>
+                  >((groups, section) => {
+                    const cluster =
+                      getSectionCluster(section) || "Unspecified cluster";
+                    const existing = groups.find((g) => g.cluster === cluster);
+                    if (existing) {
+                      existing.sections.push(section);
+                    } else {
+                      groups.push({ cluster, sections: [section] });
+                    }
+                    return groups;
+                  }, []);
                   const currentSectionId = assignments[a.id] ?? "";
                   const locked = Boolean(lockedIds[a.id]);
-                  const sectionOptions =
+                  const currentSection =
                     currentSectionId &&
                     !matchingSections.some(
                       (s) => String(s.id) === currentSectionId
                     )
-                      ? [
-                          ...matchingSections,
-                          ...sectionsByTrack.filter(
-                            (s) => String(s.id) === currentSectionId
-                          ),
-                        ]
-                      : matchingSections;
+                      ? sectionsByTrack.find(
+                          (s) => String(s.id) === currentSectionId
+                        )
+                      : null;
                   return (
                     <tr key={a.id} className="hover:bg-emerald-50">
-                      <td className="px-5 py-4">
+                      <td className="wrap-break-word px-3 py-4">
                         <p className="font-semibold">
                           {[a.first_name, a.middle_name, a.last_name]
                             .filter(Boolean)
@@ -828,29 +897,31 @@ export default function SectionsPage() {
                           {String(a.id).slice(0, 8)}
                         </p>
                       </td>
-                      <td className="px-5 py-4 text-xs text-emerald-900">
+                      <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                         {studentTrack ? (
                           getTrackLabel(studentTrack)
                         ) : (
                           <span className="text-emerald-800">—</span>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-xs text-emerald-900">
+                      <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                         {studentCluster || (
                           <span className="text-emerald-800">—</span>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-xs capitalize">
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px]">
+                      <td className="px-3 py-4 text-xs capitalize">
+                        <span className="inline-block rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px]">
                           {getEnrollmentStatusLabel(a.status)}
                         </span>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-3 py-4">
                         {locked ? (
-                          <div className="w-60 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2.5 text-xs font-semibold text-emerald-800">
-                            <span className="flex items-center gap-1.5">
-                              <Lock size={13} />
-                              {selected?.name || "Assigned section"}
+                          <div className="w-full rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2.5 text-xs font-semibold text-emerald-800">
+                            <span className="flex items-start gap-1.5">
+                              <Lock size={13} className="mt-0.5 shrink-0" />
+                              <span className="min-w-0 wrap-break-word">
+                                {selected?.name || "Assigned section"}
+                              </span>
                             </span>
                             <span className="mt-0.5 block text-[10px] font-normal text-emerald-700">
                               Locked — cannot be changed
@@ -865,24 +936,42 @@ export default function SectionsPage() {
                                 [a.id]: e.target.value,
                               }))
                             }
-                            className="w-60 rounded-lg border border-emerald-200 bg-white px-3 py-2.5 text-xs text-emerald-700 outline-none focus:border-emerald-200"
+                            className="w-full rounded-lg border border-emerald-200 bg-white px-2 py-2.5 text-xs text-emerald-700 outline-none focus:border-emerald-200"
                           >
                             <option value="">— Unassigned —</option>
-                            {sectionOptions.length === 0 && (
+                            {matchingSections.length === 0 && (
                               <option value="" disabled>
-                                No {getTrackLabel(studentTrack)} sections
+                                {normalizedStudentCluster
+                                  ? `No sections for ${studentCluster}`
+                                  : studentTrackValue
+                                    ? `No ${getTrackLabel(studentTrack)} sections`
+                                    : "No sections available"}
                               </option>
                             )}
-                            {sectionOptions.map((s) => (
-                              <option key={s.id} value={String(s.id)}>
-                                {s.name}
-                                {s.school_year ? ` · ${s.school_year}` : ""}
-                              </option>
+                            {currentSection && (
+                              <optgroup label="Current assignment">
+                                <option value={String(currentSection.id)}>
+                                  {currentSection.name}
+                                  {currentSection.school_year
+                                    ? ` · ${currentSection.school_year}`
+                                    : ""}
+                                </option>
+                              </optgroup>
+                            )}
+                            {sectionGroups.map((group) => (
+                              <optgroup key={group.cluster} label={group.cluster}>
+                                {group.sections.map((s) => (
+                                  <option key={s.id} value={String(s.id)}>
+                                    {s.name}
+                                    {s.school_year ? ` · ${s.school_year}` : ""}
+                                  </option>
+                                ))}
+                              </optgroup>
                             ))}
                           </select>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-xs text-emerald-900">
+                      <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                         {selected?.adviser_name ? (
                           <span className="font-medium text-emerald-700">
                             {selected.adviser_name}
@@ -892,15 +981,16 @@ export default function SectionsPage() {
                         )}
                         {selected?.capacity != null && (
                           <span className="block mt-0.5 text-[10px] text-emerald-800">
-                            Class capacity: {selected.capacity}
+                            Current enrolled: {assignedCount(selected.id)} /{" "}
+                            {selected.capacity}
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-3 py-4">
                         {locked ? (
                           <span
                             title="Section assignments are final and cannot be changed once saved."
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-800"
+                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-100 px-2.5 py-2 text-xs font-semibold text-emerald-800"
                           >
                             <Lock size={14} />
                             Locked
@@ -909,7 +999,7 @@ export default function SectionsPage() {
                           <button
                             onClick={() => save(a.id)}
                             disabled={saving === a.id}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-yellow-300 px-3 py-2 text-xs font-bold text-emerald-950 hover:bg-yellow-300 disabled:opacity-60"
+                            className="inline-flex items-center gap-1 rounded-lg bg-yellow-300 px-2.5 py-2 text-xs font-bold text-emerald-950 hover:bg-yellow-300 disabled:opacity-60"
                           >
                             <Save size={14} />
                             {saving === a.id ? "Saving…" : "Save"}
@@ -923,7 +1013,7 @@ export default function SectionsPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-5 py-10 text-center text-emerald-900"
+                    className="px-3 py-10 text-center text-emerald-900"
                   >
                     <Users className="mx-auto mb-2 opacity-50" size={24} />
                     No {statusFilter} students found.

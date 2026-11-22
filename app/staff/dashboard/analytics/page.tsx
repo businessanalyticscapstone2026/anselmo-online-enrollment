@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Clock,
   Download,
-  GraduationCap,
   Lightbulb,
   MapPin,
   RefreshCw,
@@ -15,22 +14,17 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import {
-  getSectionCluster,
-  resolveSectionList,
-  type SectionRecord,
-} from "@/lib/sections";
 import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import {
   evaluateEnrollmentAvailability,
   type EnrollmentSettings,
 } from "@/lib/enrollmentSettings";
 import {
+  buildAgeBreakdown,
   buildClusterBreakdown,
   buildClusterDailyTrend,
   buildCountBreakdown,
   buildGenderBreakdown,
-  getAssignedSectionId,
   getBarangay,
   getCollegeCourse,
   getMunicipality,
@@ -130,7 +124,6 @@ function formatPercent(value: number): string {
 
 export default function AnalyticsPage() {
   const [records, setRecords] = useState<ApplicationRecord[]>([]);
-  const [sections, setSections] = useState<SectionRecord[]>([]);
   const [settings, setSettings] = useState<EnrollmentSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -150,33 +143,28 @@ export default function AnalyticsPage() {
     setError("");
 
     try {
-      const [applicationsResult, sectionsResult, settingsResult] =
-        await Promise.all([
-          supabase
-            .from("student_applications")
-            .select("*")
-            .order("submitted_at", { ascending: false })
-            .limit(5000),
-          supabase.from("sections").select("*").order("name"),
-          supabase
-            .from("enrollment_settings")
-            .select("id, enrollment_start_date, enrollment_end_date")
-            .eq("id", 1)
-            .maybeSingle(),
-        ]);
+      const [applicationsResult, settingsResult] = await Promise.all([
+        supabase
+          .from("student_applications")
+          .select("*")
+          .order("submitted_at", { ascending: false })
+          .limit(5000),
+        supabase
+          .from("enrollment_settings")
+          .select("id, enrollment_start_date, enrollment_end_date")
+          .eq("id", 1)
+          .maybeSingle(),
+      ]);
 
       if (applicationsResult.error) {
         setError(applicationsResult.error.message);
       } else {
-        setRecords(
-          filterVisibleApplications(
-            (applicationsResult.data ?? []) as ApplicationRecord[]
-          )
+        const visible = filterVisibleApplications(
+          (applicationsResult.data ?? []) as ApplicationRecord[]
         );
-      }
-
-      if (!sectionsResult.error) {
-        setSections((sectionsResult.data ?? []) as SectionRecord[]);
+        setRecords(
+          visible.filter((record) => getStatus(record) !== "rejected")
+        );
       }
 
       if (!settingsResult.error) {
@@ -217,11 +205,6 @@ export default function AnalyticsPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "student_applications" },
-        scheduleReload
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "sections" },
         scheduleReload
       )
       .subscribe();
@@ -326,6 +309,7 @@ export default function AnalyticsPage() {
 
   const clusters = useMemo(() => buildClusterBreakdown(filtered), [filtered]);
   const genders = useMemo(() => buildGenderBreakdown(filtered), [filtered]);
+  const ages = useMemo(() => buildAgeBreakdown(filtered), [filtered]);
 
   const trackCounts = useMemo(() => {
     let academic = 0;
@@ -342,17 +326,17 @@ export default function AnalyticsPage() {
     return { academic, techpro, unknown };
   }, [filtered]);
 
-  const barangays = useMemo(
-    () => buildCountBreakdown(filtered, getBarangay, 8),
-    [filtered]
-  );
-
-  const municipalities = useMemo(
+  const barangayMunicipalities = useMemo(
     () =>
       buildCountBreakdown(
         filtered,
-        (record) => getMunicipality(record) || getBarangay(record),
-        6
+        (record) => {
+          const barangay = getBarangay(record);
+          const municipality = getMunicipality(record);
+          if (barangay && municipality) return `${barangay}, ${municipality}`;
+          return barangay || municipality;
+        },
+        8
       ),
     [filtered]
   );
@@ -387,51 +371,7 @@ export default function AnalyticsPage() {
     return { ip, fourPs, special, pwd };
   }, [filtered]);
 
-  const sectionList = useMemo(() => resolveSectionList(sections), [sections]);
-
-  const sectionStats = useMemo(
-    () =>
-      sectionList
-        .map((section) => {
-          const assigned = filtered.filter(
-            (record) => getAssignedSectionId(record) === String(section.id)
-          );
-          const enrolled = assigned.filter(
-            (record) => getStatus(record) === "enrolled"
-          ).length;
-          const capacity = Number(section.capacity) || 45;
-          const rate =
-            capacity > 0
-              ? Math.min(
-                  100,
-                  Math.round((enrolled / capacity) * 1000) / 10
-                )
-              : 0;
-
-          return {
-            section,
-            assigned: assigned.length,
-            enrolled,
-            capacity,
-            rate,
-          };
-        })
-        .sort((a, b) => b.rate - a.rate || b.enrolled - a.enrolled),
-    [sectionList, filtered]
-  );
-
-  const capacityTotal = sectionStats.reduce(
-    (sum, item) => sum + item.capacity,
-    0
-  );
-  const assignedTotal = filtered.filter((record) =>
-    getAssignedSectionId(record)
-  ).length;
-  const unassigned = Math.max(total - assignedTotal, 0);
-  const overallUtilization =
-    capacityTotal > 0
-      ? Math.round((statusCounts.enrolled / capacityTotal) * 1000) / 10
-      : 0;
+  const requirementsCompletion = requirements.rate;
 
   const availability = useMemo(
     () => evaluateEnrollmentAvailability(settings, now),
@@ -504,37 +444,40 @@ export default function AnalyticsPage() {
       });
     }
 
-    const nearCapacity = sectionStats.filter((item) => item.rate >= 90);
-
-    if (nearCapacity.length > 0) {
+    const topLocation = barangayMunicipalities.data[0];
+    if (topLocation) {
       list.push({
-        tone: "critical",
-        title: `${nearCapacity.length} section${
-          nearCapacity.length === 1 ? "" : "s"
-        } at or above 90% capacity`,
-        detail: `${nearCapacity
-          .slice(0, 3)
-          .map((item) => item.section.name)
-          .join(", ")} — prepare additional sections or reassign applicants before slots run out.`,
-      });
-    } else if (capacityTotal > 0) {
-      list.push({
-        tone: overallUtilization >= 70 ? "good" : "info",
-        title: `Overall section utilization is ${formatPercent(
-          overallUtilization
-        )}`,
-        detail:
-          overallUtilization >= 70
-            ? "Capacity is being used efficiently. Keep the current section plan."
-            : "There is still available capacity. Continue promoting enrollment and monitor low-demand clusters.",
+        tone: "info",
+        title: `Top applicant location: ${topLocation.label}`,
+        detail: `${topLocation.value} application${
+          topLocation.value === 1 ? "" : "s"
+        } (${formatPercent(
+          topLocation.percentage
+        )}) came from this barangay and municipality.`,
       });
     }
 
-    if (requirements.rate < 80) {
+    if (ages.total > 0) {
+      list.push({
+        tone: "info",
+        title: `Average applicant age: ${ages.average}`,
+        detail: `Computed from ${ages.total} application${
+          ages.total === 1 ? "" : "s"
+        } with a recorded age${
+          ages.unrecorded > 0
+            ? `; ${ages.unrecorded} application${
+                ages.unrecorded === 1 ? "" : "s"
+              } still have no age on file`
+            : ""
+        }.`,
+      });
+    }
+
+    if (requirementsCompletion < 80) {
       list.push({
         tone: "warn",
         title: `Requirements completion is ${formatPercent(
-          requirements.rate
+          requirementsCompletion
         )}`,
         detail: `${requirements.incomplete} application${
           requirements.incomplete === 1 ? "" : "s"
@@ -544,7 +487,7 @@ export default function AnalyticsPage() {
       list.push({
         tone: "good",
         title: `Requirements completion is ${formatPercent(
-          requirements.rate
+          requirementsCompletion
         )}`,
         detail:
           "Most applicants have submitted their documents. Continue validating pending uploads.",
@@ -589,29 +532,19 @@ export default function AnalyticsPage() {
       });
     }
 
-    if (unassigned > 0) {
-      list.push({
-        tone: "warn",
-        title: `${unassigned} application${
-          unassigned === 1 ? "" : "s"
-        } without an assigned section`,
-        detail:
-          "Assign sections to prevent capacity surprises and keep the learner roster complete.",
-      });
-    }
-
     return list;
   }, [
     availability,
     pendingAged,
-    sectionStats,
-    capacityTotal,
-    overallUtilization,
+    barangayMunicipalities.data,
+    ages.total,
+    ages.average,
+    ages.unrecorded,
     requirements,
+    requirementsCompletion,
     projection,
     clusters.data,
     courses.data,
-    unassigned,
   ]);
 
   const trendSeries = clusterTrend.keys.map((key, index) => ({
@@ -623,7 +556,6 @@ export default function AnalyticsPage() {
   const statusData = [
     { label: "Pending", value: statusCounts.pending, color: "#f59e0b" },
     { label: "Enrolled", value: statusCounts.enrolled, color: "#176b4d" },
-    { label: "Rejected", value: statusCounts.rejected, color: "#e11d48" },
   ];
 
   const trackData = [
@@ -657,25 +589,11 @@ export default function AnalyticsPage() {
       tone: "text-amber-600",
     },
     {
-      label: "Rejected",
-      value: statusCounts.rejected,
-      note: "Not proceeding",
-      icon: AlertTriangle,
-      tone: "text-rose-600",
-    },
-    {
       label: "New This Week",
       value: weekCount,
       note: `${todayCount} submitted today`,
       icon: TrendingUp,
       tone: "text-sky-600",
-    },
-    {
-      label: "Seats Used",
-      value: formatPercent(overallUtilization),
-      note: `${statusCounts.enrolled} of ${capacityTotal} seats`,
-      icon: GraduationCap,
-      tone: "text-emerald-700",
     },
   ];
 
@@ -693,10 +611,13 @@ export default function AnalyticsPage() {
       ["Total applications", total],
       ["Enrolled", statusCounts.enrolled],
       ["Pending", statusCounts.pending],
-      ["Rejected", statusCounts.rejected],
+      ["Rejected (excluded from analytics totals)", statusCounts.rejected],
       ["Enrollment rate (%)", enrollmentRate],
       ["New this week", weekCount],
       ["Submitted today", todayCount],
+      ["Average age (recorded)", ages.average],
+      ["Age recorded", ages.total],
+      ["Age not recorded", ages.unrecorded],
       ["Pending older than 3 days", pendingAged],
       ["Requirements complete", requirements.complete],
       ["Requirements completion rate (%)", requirements.rate],
@@ -704,8 +625,6 @@ export default function AnalyticsPage() {
       ["4Ps beneficiary", flags.fourPs],
       ["Special needs program", flags.special],
       ["With PWD ID", flags.pwd],
-      ["Overall section utilization (%)", overallUtilization],
-      ["Unassigned applications", unassigned],
       [],
       ["Cluster", "Applications", "%"],
       ...clusters.data.map((item) => [
@@ -714,33 +633,21 @@ export default function AnalyticsPage() {
         item.percentage,
       ]),
       [],
-      ["Barangay", "Applications", "%"],
-      ...barangays.data.map((item) => [
+      ["Barangay & Municipality", "Applications", "%"],
+      ...barangayMunicipalities.data.map((item) => [
         item.label,
         item.value,
         item.percentage,
       ]),
       [],
-      ["Municipality / City", "Applications", "%"],
-      ...municipalities.data.map((item) => [
-        item.label,
-        item.value,
-        item.percentage,
-      ]),
+      ["Age group", "Applicants", "%"],
+      ...ages.data.map((item) => [item.label, item.value, item.percentage]),
       [],
       ["College course", "Learners", "%"],
       ...courses.data.map((item) => [
         item.label,
         item.value,
         item.percentage,
-      ]),
-      [],
-      ["Section", "Enrolled", "Capacity", "Utilization %"],
-      ...sectionStats.map((item) => [
-        item.section.name,
-        item.enrolled,
-        item.capacity,
-        item.rate,
       ]),
       [],
       ["Insight", "Detail"],
@@ -886,7 +793,7 @@ export default function AnalyticsPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
             {kpis.map((card) => {
               const Icon = card.icon;
 
@@ -1003,35 +910,43 @@ export default function AnalyticsPage() {
             </section>
 
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
-              <div className="flex items-center gap-2">
-                <MapPin size={16} className="text-emerald-700" />
-                <h2 className="text-lg font-bold">Top Barangays</h2>
-              </div>
+              <h2 className="text-lg font-bold">Age Distribution</h2>
               <p className="mt-1 text-xs text-emerald-800">
-                Where applicants are coming from.
+                Applicant age profile
+                {ages.total > 0
+                  ? ` · average ${ages.average} years`
+                  : ""}
+                {ages.unrecorded > 0
+                  ? ` · ${ages.unrecorded} not recorded`
+                  : ""}
+                .
               </p>
 
               <div className="mt-5">
                 <BarList
-                  data={barangays.data}
-                  total={barangays.total}
-                  emptyLabel="No barangay data yet"
+                  data={ages.data}
+                  total={ages.total}
+                  color="#94a3b8"
+                  emptyLabel="No age data yet"
                 />
               </div>
             </section>
 
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
-              <h2 className="text-lg font-bold">Municipality / City</h2>
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6 lg:col-span-2 xl:col-span-1">
+              <div className="flex items-center gap-2">
+                <MapPin size={16} className="text-emerald-700" />
+                <h2 className="text-lg font-bold">Barangay &amp; Municipality</h2>
+              </div>
               <p className="mt-1 text-xs text-emerald-800">
-                Applicant distribution by municipality or city.
+                Connected applicant location view by barangay and municipality.
               </p>
 
               <div className="mt-5">
                 <BarList
-                  data={municipalities.data}
-                  total={municipalities.total}
+                  data={barangayMunicipalities.data}
+                  total={barangayMunicipalities.total}
                   color="#6ba8c7"
-                  emptyLabel="No municipality data yet"
+                  emptyLabel="No barangay or municipality data yet"
                 />
               </div>
             </section>
@@ -1053,120 +968,68 @@ export default function AnalyticsPage() {
             </section>
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
-              <h2 className="text-lg font-bold">Requirements Completion</h2>
-              <p className="mt-1 text-xs text-emerald-800">
-                Applicants with at least one uploaded requirement.
-              </p>
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
+            <h2 className="text-lg font-bold">Requirements Completion</h2>
+            <p className="mt-1 text-xs text-emerald-800">
+              Applicants with at least one uploaded requirement.
+            </p>
 
-              <div className="mt-5 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-3xl font-extrabold tabular-nums text-emerald-950">
-                    {formatPercent(requirements.rate)}
-                  </p>
-                  <p className="text-xs text-emerald-800">
-                    {requirements.complete} complete · {requirements.incomplete}{" "}
-                    missing
-                  </p>
-                </div>
-
-                <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                  {requirements.complete} / {total}
-                </span>
+            <div className="mt-5 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-3xl font-extrabold tabular-nums text-emerald-950">
+                  {formatPercent(requirements.rate)}
+                </p>
+                <p className="text-xs text-emerald-800">
+                  {requirements.complete} complete · {requirements.incomplete}{" "}
+                  missing
+                </p>
               </div>
 
-              <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-emerald-200">
+              <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                {requirements.complete} / {total}
+              </span>
+            </div>
+
+            <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-emerald-200">
+              <div
+                className="h-full rounded-full bg-emerald-700 transition-all duration-500"
+                style={{ width: `${Math.min(100, requirements.rate)}%` }}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  label: "IP community",
+                  value: flags.ip,
+                },
+                {
+                  label: "4Ps beneficiary",
+                  value: flags.fourPs,
+                },
+                {
+                  label: "Special needs program",
+                  value: flags.special,
+                },
+                {
+                  label: "With PWD ID",
+                  value: flags.pwd,
+                },
+              ].map((item) => (
                 <div
-                  className="h-full rounded-full bg-emerald-700 transition-all duration-500"
-                  style={{ width: `${Math.min(100, requirements.rate)}%` }}
-                />
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                {[
-                  {
-                    label: "IP community",
-                    value: flags.ip,
-                  },
-                  {
-                    label: "4Ps beneficiary",
-                    value: flags.fourPs,
-                  },
-                  {
-                    label: "Special needs program",
-                    value: flags.special,
-                  },
-                  {
-                    label: "With PWD ID",
-                    value: flags.pwd,
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-xl border border-emerald-200 bg-white/70 p-3"
-                  >
-                    <p className="text-xs font-semibold text-emerald-700">
-                      {item.label}
-                    </p>
-                    <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">
-                      {item.value.toLocaleString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold">Section Utilization</h2>
-                  <p className="mt-1 text-xs text-emerald-800">
-                    Enrolled learners against section capacity.
+                  key={item.label}
+                  className="rounded-xl border border-emerald-200 bg-white/70 p-3"
+                >
+                  <p className="text-xs font-semibold text-emerald-700">
+                    {item.label}
+                  </p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">
+                    {item.value.toLocaleString()}
                   </p>
                 </div>
-
-                <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                  {unassigned} unassigned
-                </span>
-              </div>
-
-              <div className="mt-5 max-h-96 space-y-4 overflow-y-auto pr-1">
-                {sectionStats.map((item) => (
-                  <div key={String(item.section.id)}>
-                    <div className="mb-1 flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate font-semibold text-emerald-900">
-                        {item.section.name}
-                      </span>
-                      <span className="shrink-0 text-emerald-700">
-                        {item.enrolled}/{item.capacity} ·{" "}
-                        {formatPercent(item.rate)}
-                      </span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-200">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(100, item.rate)}%`,
-                          backgroundColor:
-                            item.rate >= 90
-                              ? "#e11d48"
-                              : item.rate >= 70
-                                ? "#f59e0b"
-                                : "#176b4d",
-                        }}
-                      />
-                    </div>
-                    {getSectionCluster(item.section) && (
-                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
-                        {getSectionCluster(item.section)}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+              ))}
+            </div>
+          </section>
 
           <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
             <div className="flex items-start gap-3">

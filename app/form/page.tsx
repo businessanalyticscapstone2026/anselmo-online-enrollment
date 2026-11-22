@@ -67,6 +67,23 @@ function dateInputValue(value: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function calculateAgeFromBirthDate(value: string): string {
+  if (!value) return "";
+
+  const birth = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return "";
+
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age -= 1;
+  }
+
+  return age >= 0 ? String(age) : "";
+}
+
 const TODAY = new Date();
 const CURRENT_YEAR = TODAY.getFullYear();
 const MIN_BIRTH_YEAR = CURRENT_YEAR - 30;
@@ -140,6 +157,7 @@ function FormContent() {
   const [extension, setExtension] = useState("");
   const [email, setEmail] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("studentEmail") || "" : ""));
   const [dob, setDob] = useState("");
+  const [age, setAge] = useState("");
   const [pob, setPob] = useState("");
   const [gender, setGender] = useState("");
   const [religion, setReligion] = useState("");
@@ -291,6 +309,16 @@ function FormContent() {
 
     if (dob < MIN_BIRTH_DATE || dob > MAX_BIRTH_DATE) {
       return `Birth date must be between ${MIN_BIRTH_YEAR} and ${CURRENT_YEAR}.`;
+    }
+
+    const ageNumber = Number(age);
+    if (
+      !age.trim() ||
+      !Number.isInteger(ageNumber) ||
+      ageNumber < 10 ||
+      ageNumber > 100
+    ) {
+      return "Age must be a whole number between 10 and 100.";
     }
 
     if (!pob.trim()) {
@@ -474,6 +502,7 @@ function FormContent() {
       lrn: lrn.trim(),
       email: email.trim().toLowerCase(),
       birthDate: dob,
+      age: Number(age),
       placeOfBirth: pob.trim(),
       gender,
       religion: religion.trim(),
@@ -865,9 +894,24 @@ function FormContent() {
                   label="DATE OF BIRTH"
                   type="date"
                   value={dob}
-                  onChange={(e) => setDob(e.target.value)}
+                  onChange={(e) => {
+                    setDob(e.target.value);
+                    setAge(calculateAgeFromBirthDate(e.target.value));
+                  }}
                   min={MIN_BIRTH_DATE}
                   max={MAX_BIRTH_DATE}
+                  required
+                />
+
+                <FormInput
+                  label="AGE"
+                  type="number"
+                  value={age}
+                  onChange={(e) => setAge(keepDigits(e.target.value, 3))}
+                  placeholder="e.g. 16"
+                  min="10"
+                  max="100"
+                  inputMode="numeric"
                   required
                 />
 

@@ -96,6 +96,19 @@ function booleanOrNull(value: unknown): boolean | null {
   return value === true ? true : value === false ? false : null;
 }
 
+function integerValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  }
+
+  return null;
+}
+
 function formatAddress(address: Record<string, string>): string {
   return [
     address.houseNo,
@@ -247,6 +260,7 @@ export async function POST(request: NextRequest) {
     const lrn = textValue(data.lrn, 12);
     const email = textValue(data.email, 254).toLowerCase();
     const birthDate = textValue(data.birthDate, 10);
+    const age = integerValue(data.age);
     const placeOfBirth = textValue(data.placeOfBirth, 200);
     const gender = textValue(data.gender, 30).toLowerCase();
     const religion = textValue(data.religion, 100);
@@ -322,6 +336,16 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: `Birth date must be between ${MIN_BIRTH_YEAR} and ${CURRENT_YEAR}.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (age === null || age < 10 || age > 100) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Age must be a whole number between 10 and 100.",
         },
         { status: 400 }
       );
@@ -719,6 +743,7 @@ export async function POST(request: NextRequest) {
       lrn: lrn || null,
       college_course: collegeCourse || null,
       place_of_birth: placeOfBirth,
+      age,
       religion,
       selected_track: selectedTrack,
       selected_cluster: selectedCluster,
@@ -757,6 +782,7 @@ export async function POST(request: NextRequest) {
       email,
       lrn: lrn || null,
       birth_date: birthDate || null,
+      age,
       place_of_birth: placeOfBirth || null,
       sex: gender || null,
       gender: gender || null,
