@@ -7,49 +7,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, FileText, Upload, X } from "lucide-react";
 import EnrollmentProgress from "@/app/_components/EnrollmentProgress";
+import { supabase } from "@/lib/supabaseClient";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_FILE_EXTENSIONS = [
-    "jpg",
-    "jpeg",
-    "jpe",
-    "jfif",
-    "png",
-    "gif",
-    "webp",
-    "bmp",
-    "tif",
-    "tiff",
-    "heic",
-    "heif",
-    "avif",
-    "svg",
-    "ico",
-    "pdf",
-];
-
-function isAllowedFile(file: File) {
-    const type = (file.type || "").toLowerCase();
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-
-    return (
-        type.startsWith("image/") ||
-        type === "application/pdf" ||
-        ALLOWED_FILE_EXTENSIONS.includes(extension)
-    );
-}
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 function validateFile(file: File | null, label: string) {
     if (!file) return;
 
-    if (!isAllowedFile(file)) {
-        throw new Error(
-            `${label}: only image files (JPG, PNG, GIF, WEBP, HEIC, etc.) or PDF files are accepted.`
-        );
+    if (file.size === 0) {
+        throw new Error(`${label}: the selected file is empty.`);
     }
 
     if (file.size > MAX_FILE_SIZE) {
-        throw new Error(`${label}: the maximum file size is 10 MB.`);
+        throw new Error(`${label}: the maximum file size is 50 MB.`);
     }
 }
 
@@ -141,41 +111,106 @@ export default function RequirementsPage() {
             );
         }
 
-        const buildFormData = (includeApplicationId: boolean) => {
-            const formData = new FormData();
-            if (includeApplicationId && applicationId) {
-                formData.append("applicationId", applicationId);
+        const filesToUpload: Array<{
+            kind: "birthCertificate" | "reportCard" | "form137";
+            file: File;
+        }> = [
+            { kind: "birthCertificate", file: birthCertificate },
+            { kind: "reportCard", file: reportCard },
+        ];
+
+        if (otherRequirements) {
+            filesToUpload.push({ kind: "form137", file: otherRequirements });
+        }
+
+        // Get short-lived signed upload URLs from the server, then upload each
+        // file directly to Supabase Storage. This bypasses hosting request-body
+        // limits (which caused large phone photos to fail) and accepts any
+        // image type.
+        const prepareResponse = await fetch("/api/enroll/upload-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId,
+                email,
+                contactNumber,
+                files: filesToUpload.map(({ kind, file }) => ({
+                    kind,
+                    name: file.name,
+                })),
+            }),
+        });
+
+        const prepared = await prepareResponse.json().catch(() => null);
+
+        if (
+            !prepareResponse.ok ||
+            !prepared?.success ||
+            !prepared?.bucket ||
+            !prepared?.uploads
+        ) {
+            throw new Error(
+                prepared?.error ||
+                "Unable to prepare the document upload. Please try again."
+            );
+        }
+
+        const uploads = prepared.uploads as Record<
+            string,
+            { name?: string; path?: string; token?: string }
+        >;
+
+        for (const { kind, file } of filesToUpload) {
+            const target = uploads[kind];
+
+            if (!target?.path || !target?.token) {
+                throw new Error(
+                    `The upload for ${file.name} could not be prepared.`
+                );
             }
-            formData.append("email", email);
-            if (contactNumber) formData.append("contactNumber", contactNumber);
-            if (studentName) formData.append("studentName", studentName);
-            formData.append("birthCertificate", birthCertificate);
-            formData.append("reportCard", reportCard);
 
-            if (otherRequirements) {
-                formData.append("form137", otherRequirements);
+            const { error: uploadError } = await supabase.storage
+                .from(prepared.bucket)
+                .uploadToSignedUrl(target.path, target.token, file, {
+                    contentType: file.type || "application/octet-stream",
+                });
+
+            if (uploadError) {
+                throw new Error(`${file.name}: ${uploadError.message}`);
             }
+        }
 
-            return formData;
-        };
+        const completedFiles: Record<string, unknown> = {};
 
-        const postRequirements = async (includeApplicationId: boolean) => {
-            const response = await fetch("/api/enroll/upload-requirements", {
+        for (const { kind, file } of filesToUpload) {
+            const target = uploads[kind];
+            completedFiles[kind] = {
+                path: target.path,
+                name: file.name,
+                size: file.size,
+                type: file.type,
+            };
+        }
+
+        const completeResponse = await fetch(
+            "/api/enroll/complete-requirements",
+            {
                 method: "POST",
-                body: buildFormData(includeApplicationId),
-            });
-            const result = await response.json().catch(() => ({}));
-            return { response, result };
-        };
-
-        // The server re-links stale application IDs by email/contact, so never
-        // discard the local application ID from the client here.
-        const { response, result } = await postRequirements(
-            Boolean(applicationId)
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId: prepared.applicationId || applicationId,
+                    email,
+                    contactNumber,
+                    studentName,
+                    files: completedFiles,
+                }),
+            }
         );
 
-        if (!response.ok) {
-            throw new Error(result.error || "Document upload failed.");
+        const result = await completeResponse.json().catch(() => ({}));
+
+        if (!completeResponse.ok || !result?.success) {
+            throw new Error(result?.error || "Document upload failed.");
         }
 
         if (result.data?.applicationId) {
@@ -295,9 +330,9 @@ export default function RequirementsPage() {
                             </h3>
                             <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-emerald-700/90 sm:text-base">
                                 Take a photo of your documents or upload clear copies.
-                                Any image type is accepted (JPG, PNG, GIF, WEBP, HEIC,
-                                etc.) as well as PDF files. Each file must not exceed
-                                10 MB.
+                                Every image type is accepted (JPG, PNG, GIF, WEBP,
+                                HEIC, and any other format) as well as PDF files.
+                                Each file must not exceed 50 MB.
                             </p>
                         </div>
                     </div>
@@ -659,7 +694,7 @@ function UploadField({
                     ref={inputRef}
                     id={id}
                     type="file"
-                    accept="image/*,application/pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif,.svg,.pdf"
+                    accept="*/*"
                     className="sr-only"
                     onChange={(event) =>
                         onChange(event.target.files?.[0] ?? null)
@@ -729,8 +764,9 @@ function UploadField({
                                 </label>
                             </div>
                             <p className="mt-1 text-xs leading-5 text-gray-500">
-                                Take a photo with your camera or choose any image or
-                                PDF · max 10 MB
+                                Take a photo with your camera or choose any image
+                                file (JPG, PNG, HEIC, and every other type) or PDF
+                                · max 50 MB
                             </p>
                         </div>
                     </div>

@@ -357,7 +357,7 @@ export default async function Home() {
                     key={item.step}
                     className="group overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm transition hover:-translate-y-1 hover:border-yellow-400/40"
                   >
-                    <div className="relative aspect-[945/2048] w-full">
+                    <div className="relative aspect-945/2048 w-full">
                       <Image
                         src={item.image}
                         alt={item.title}

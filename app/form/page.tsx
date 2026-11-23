@@ -89,6 +89,119 @@ const initialGuardian: GuardianState = {
   contactNumber: "",
 };
 
+const FORM_DRAFT_KEY = "studentEnrollmentFormDraft";
+
+interface SavedFormDraft {
+  lrn: string;
+  lastName: string;
+  firstName: string;
+  middleName: string;
+  extension: string;
+  email: string;
+  dob: string;
+  age: string;
+  pob: string;
+  gender: string;
+  religion: string;
+  contactNumber: string;
+  collegeCourse: string;
+  isIpCommunity: boolean;
+  ipCommunityType: string;
+  is4psBeneficiary: boolean;
+  fourPsHouseholdId: string;
+  specialNeedsProgram: boolean | null;
+  specialNeedsGroup: string;
+  specialNeedsCondition: string;
+  specialNeedsDetail: string;
+  hasPwdId: boolean | null;
+  lastSchoolYearCompleted: string;
+  lastSchoolAttended: string;
+  lastSchoolId: string;
+  preferredModalities: string[];
+  currentAddress: AddressState;
+  permanentAddress: AddressState;
+  sameAsCurrentAddress: boolean;
+  guardians: GuardianState[];
+  agreedToTerms: boolean;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function booleanValue(value: unknown): boolean {
+  return value === true;
+}
+
+function nullableBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function normalizeAddress(value: unknown): AddressState {
+  const record =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return {
+    houseNo: keepDigits(stringValue(record.houseNo), 10),
+    street: keepTextCharacters(stringValue(record.street)),
+    barangay: keepTextAndNumberCharacters(stringValue(record.barangay)),
+    municipality: keepTextCharacters(stringValue(record.municipality)),
+    province: keepTextCharacters(stringValue(record.province)),
+    country:
+      keepTextCharacters(stringValue(record.country)) || initialAddress.country,
+    zipCode: keepDigits(stringValue(record.zipCode), 4),
+  };
+}
+
+function normalizeGuardians(value: unknown): GuardianState[] {
+  const list = Array.isArray(value) ? value : [];
+  const normalized = list.slice(0, 3).map((item) => {
+    const record =
+      item && typeof item === "object"
+        ? (item as Record<string, unknown>)
+        : {};
+
+    return {
+      lastName: keepNameCharacters(stringValue(record.lastName)),
+      firstName: keepNameCharacters(stringValue(record.firstName)),
+      middleName: keepNameCharacters(stringValue(record.middleName)),
+      contactNumber: keepDigits(stringValue(record.contactNumber), 11),
+    };
+  });
+
+  while (normalized.length < 3) {
+    normalized.push({ ...initialGuardian });
+  }
+
+  return normalized;
+}
+
+function readSavedFormDraft(): Partial<SavedFormDraft> | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(FORM_DRAFT_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+
+    return parsed as Partial<SavedFormDraft>;
+  } catch {
+    return null;
+  }
+}
+
 const NAME_CHARACTERS = /[^A-Za-zÀ-ÖØ-öø-ÿ.'’\-\s]/g;
 const TEXT_CHARACTERS = /[^A-Za-zÀ-ÖØ-öø-ÿ.,'’/&\-\s]/g;
 const TEXT_AND_NUMBER_CHARACTERS = /[^A-Za-zÀ-ÖØ-öø-ÿ0-9.,'’/&\-\s]/g;
@@ -175,76 +288,194 @@ function FormContent() {
     );
   }, [hasValidSelection, trackConfig, router]);
 
+  const [savedDraft] = useState(() => readSavedFormDraft());
+
   // Learner reference number (optional)
-  const [lrn, setLrn] = useState("");
+  const [lrn, setLrn] = useState(() =>
+    keepDigits(stringValue(savedDraft?.lrn), 12)
+  );
 
   // Student basic information states
   const [lastName, setLastName] = useState(() =>
-    typeof window !== "undefined"
-      ? keepNameCharacters(localStorage.getItem("studentLastName") || "")
-      : ""
+    keepNameCharacters(
+      stringValue(savedDraft?.lastName) ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("studentLastName") || ""
+          : "")
+    )
   );
   const [firstName, setFirstName] = useState(() =>
-    typeof window !== "undefined"
-      ? keepNameCharacters(localStorage.getItem("studentFirstName") || "")
-      : ""
+    keepNameCharacters(
+      stringValue(savedDraft?.firstName) ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("studentFirstName") || ""
+          : "")
+    )
   );
-  const [middleName, setMiddleName] = useState("");
-  const [extension, setExtension] = useState("");
-  const [email, setEmail] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("studentEmail") || "" : ""));
-  const [dob, setDob] = useState("");
-  const [age, setAge] = useState("");
-  const [pob, setPob] = useState("");
-  const [gender, setGender] = useState("");
-  const [religion, setReligion] = useState("");
-  const [contactNumber, setContactNumber] = useState("");
-  const [collegeCourse, setCollegeCourse] = useState("");
+  const [middleName, setMiddleName] = useState(() =>
+    keepNameCharacters(stringValue(savedDraft?.middleName))
+  );
+  const [extension, setExtension] = useState(() =>
+    keepNameCharacters(stringValue(savedDraft?.extension), 30)
+  );
+  const [email, setEmail] = useState(() =>
+    keepEmailCharacters(
+      stringValue(savedDraft?.email) ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("studentEmail") || ""
+          : "")
+    )
+  );
+  const [dob, setDob] = useState(() => stringValue(savedDraft?.dob));
+  const [age, setAge] = useState(() =>
+    keepDigits(stringValue(savedDraft?.age), 3)
+  );
+  const [pob, setPob] = useState(() =>
+    keepTextCharacters(stringValue(savedDraft?.pob), 200)
+  );
+  const [gender, setGender] = useState(() => {
+    const value = stringValue(savedDraft?.gender);
+    return value === "male" || value === "female" ? value : "";
+  });
+  const [religion, setReligion] = useState(() =>
+    keepTextCharacters(stringValue(savedDraft?.religion), 100)
+  );
+  const [contactNumber, setContactNumber] = useState(() =>
+    keepDigits(stringValue(savedDraft?.contactNumber), 11)
+  );
+  const [collegeCourse, setCollegeCourse] = useState(() =>
+    keepTextAndNumberCharacters(stringValue(savedDraft?.collegeCourse), 200)
+  );
 
   // Address state management
-  const [currentAddress, setCurrentAddress] = useState<AddressState>(initialAddress);
-  const [permanentAddress, setPermanentAddress] = useState<AddressState>(initialAddress);
-  const [sameAsCurrentAddress, setSameAsCurrentAddress] = useState(false);
+  const [currentAddress, setCurrentAddress] = useState<AddressState>(() =>
+    normalizeAddress(savedDraft?.currentAddress)
+  );
+  const [permanentAddress, setPermanentAddress] = useState<AddressState>(() =>
+    savedDraft?.sameAsCurrentAddress === true
+      ? normalizeAddress(savedDraft?.currentAddress)
+      : normalizeAddress(savedDraft?.permanentAddress)
+  );
+  const [sameAsCurrentAddress, setSameAsCurrentAddress] = useState(
+    () => savedDraft?.sameAsCurrentAddress === true
+  );
 
   // Social information
-  const [isIpCommunity, setIsIpCommunity] = useState(false);
-  const [ipCommunityType, setIpCommunityType] = useState("");
-  const [is4psBeneficiary, setIs4psBeneficiary] = useState(false);
-  const [fourPsHouseholdId, setFourPsHouseholdId] = useState("");
+  const [isIpCommunity, setIsIpCommunity] = useState(() =>
+    booleanValue(savedDraft?.isIpCommunity)
+  );
+  const [ipCommunityType, setIpCommunityType] = useState(() =>
+    keepTextCharacters(stringValue(savedDraft?.ipCommunityType), 150)
+  );
+  const [is4psBeneficiary, setIs4psBeneficiary] = useState(() =>
+    booleanValue(savedDraft?.is4psBeneficiary)
+  );
+  const [fourPsHouseholdId, setFourPsHouseholdId] = useState(() =>
+    keepDigits(stringValue(savedDraft?.fourPsHouseholdId), 20)
+  );
 
   // Special needs education program
-  const [specialNeedsProgram, setSpecialNeedsProgram] = useState<boolean | null>(null);
-  const [specialNeedsGroup, setSpecialNeedsGroup] = useState("");
-  const [specialNeedsCondition, setSpecialNeedsCondition] = useState("");
-  const [specialNeedsDetail, setSpecialNeedsDetail] = useState("");
-  const [hasPwdId, setHasPwdId] = useState<boolean | null>(null);
+  const [specialNeedsProgram, setSpecialNeedsProgram] = useState<
+    boolean | null
+  >(() => nullableBoolean(savedDraft?.specialNeedsProgram));
+  const [specialNeedsGroup, setSpecialNeedsGroup] = useState(() =>
+    stringValue(savedDraft?.specialNeedsGroup)
+  );
+  const [specialNeedsCondition, setSpecialNeedsCondition] = useState(() =>
+    stringValue(savedDraft?.specialNeedsCondition)
+  );
+  const [specialNeedsDetail, setSpecialNeedsDetail] = useState(() =>
+    stringValue(savedDraft?.specialNeedsDetail)
+  );
+  const [hasPwdId, setHasPwdId] = useState<boolean | null>(() =>
+    nullableBoolean(savedDraft?.hasPwdId)
+  );
 
   // Returning learner / transfer details
-  const [lastSchoolYearCompleted, setLastSchoolYearCompleted] = useState("");
-  const [lastSchoolAttended, setLastSchoolAttended] = useState("");
-  const [lastSchoolId, setLastSchoolId] = useState("");
+  const [lastSchoolYearCompleted, setLastSchoolYearCompleted] = useState(() =>
+    keepTextAndNumberCharacters(
+      stringValue(savedDraft?.lastSchoolYearCompleted),
+      20
+    )
+  );
+  const [lastSchoolAttended, setLastSchoolAttended] = useState(() =>
+    keepTextAndNumberCharacters(
+      stringValue(savedDraft?.lastSchoolAttended),
+      150
+    )
+  );
+  const [lastSchoolId, setLastSchoolId] = useState(() =>
+    keepDigits(stringValue(savedDraft?.lastSchoolId), 6)
+  );
 
   // Distance learning modality preference
-  const [preferredModalities, setPreferredModalities] = useState<string[]>([]);
+  const [preferredModalities, setPreferredModalities] = useState<string[]>(() =>
+    stringArray(savedDraft?.preferredModalities).filter((item) =>
+      DISTANCE_LEARNING_MODALITIES.some((option) => option === item)
+    )
+  );
 
   // Parent / guardian information
-  const [guardians, setGuardians] = useState<GuardianState[]>([
-    { ...initialGuardian },
-    { ...initialGuardian },
-    { ...initialGuardian },
-  ]);
+  const [guardians, setGuardians] = useState<GuardianState[]>(() =>
+    normalizeGuardians(savedDraft?.guardians)
+  );
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmDraft, setConfirmDraft] = useState<ApplicationDraft | null>(
     null
   );
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(() =>
+    booleanValue(savedDraft?.agreedToTerms)
+  );
   const [legalModal, setLegalModal] = useState<LegalKind | null>(null);
   const [validationError, setValidationError] = useState("");
   const [submissionError, setSubmissionError] = useState<{
     kind: "connection" | "schema" | "general";
     message: string;
   } | null>(null);
+
+  useEffect(() => {
+    const draft: SavedFormDraft = {
+      lrn,
+      lastName,
+      firstName,
+      middleName,
+      extension,
+      email,
+      dob,
+      age,
+      pob,
+      gender,
+      religion,
+      contactNumber,
+      collegeCourse,
+      isIpCommunity,
+      ipCommunityType,
+      is4psBeneficiary,
+      fourPsHouseholdId,
+      specialNeedsProgram,
+      specialNeedsGroup,
+      specialNeedsCondition,
+      specialNeedsDetail,
+      hasPwdId,
+      lastSchoolYearCompleted,
+      lastSchoolAttended,
+      lastSchoolId,
+      preferredModalities,
+      currentAddress,
+      permanentAddress,
+      sameAsCurrentAddress,
+      guardians,
+      agreedToTerms,
+    };
+
+    try {
+      window.localStorage.setItem(FORM_DRAFT_KEY, JSON.stringify(draft));
+    } catch {
+      // Ignore storage failures (for example, private browsing quotas).
+    }
+  });
 
 
   const handleGuardianChange = (
