@@ -816,28 +816,37 @@ function FormContent() {
     setIsSubmitting(true);
 
     try {
+      const draftId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
       const response = await fetch("/api/submit-application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(applicationDraft),
+        body: JSON.stringify({ ...applicationDraft, validateOnly: true }),
       });
 
       const result = await response.json().catch(() => null);
 
-      if (!response.ok || !result?.success || !result?.id) {
+      if (!response.ok || !result?.success) {
         throw new Error(
           result?.message ||
-          `The application could not be saved. Server returned ${response.status}.`
+          `The application could not be validated. Server returned ${response.status}.`
         );
       }
 
-      // Clear credentials from any previous enrollment before storing the new one.
+      // Clear details from any previous enrollment before storing the new one.
       localStorage.removeItem("studentPassword");
       localStorage.removeItem("studentPasswordApplicationId");
-      localStorage.removeItem("studentAccountEmailPending");
+      localStorage.removeItem("studentApplicationDraft");
+      localStorage.removeItem("studentRequirements");
+      localStorage.removeItem("applicationId");
+      localStorage.removeItem("enrollmentId");
       localStorage.removeItem("emailMessage");
 
-      // Store local draft and IDs only after the server confirms the database save.
+      // Nothing is written to the database yet. Keep the entire application in
+      // the browser until Step 5 successfully sends the credential email.
       localStorage.setItem(
         "studentApplicationDraft",
         JSON.stringify({
@@ -845,6 +854,7 @@ function FormContent() {
           savedAt: new Date().toISOString(),
         })
       );
+      localStorage.setItem("enrollmentDraftId", draftId);
       localStorage.setItem("studentEmail", applicationDraft.email);
       localStorage.setItem("studentFirstName", applicationDraft.firstName);
       localStorage.setItem("studentLastName", applicationDraft.lastName);
@@ -858,15 +868,7 @@ function FormContent() {
       );
       localStorage.setItem("studentTrack", selectedTrack);
       localStorage.setItem("studentCluster", selectedCluster);
-      localStorage.setItem("applicationId", String(result.id));
-      localStorage.setItem("enrollmentId", String(result.id));
-      localStorage.setItem("applicationId", result.id);
-
-      if (result.emailSent === false) {
-        localStorage.setItem("studentAccountEmailPending", "true");
-      } else {
-        localStorage.removeItem("studentAccountEmailPending");
-      }
+      localStorage.setItem("studentAccountEmailPending", "true");
 
       router.push(
         `/enroll/requirements?track=${encodeURIComponent(

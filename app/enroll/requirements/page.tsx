@@ -44,24 +44,27 @@ export default function RequirementsPage() {
         }
     }, [step, router]);
 
-    // Without an application ID or email there is nothing the API can match.
+    // Without a draft ID or email there is nothing the API can match.
     useEffect(() => {
-        const hasApplicationId = Boolean(
-            localStorage.getItem("applicationId") ||
-            localStorage.getItem("enrollmentId")
-        );
+        const hasDraftId = Boolean(localStorage.getItem("enrollmentDraftId"));
         const hasEmail = Boolean(localStorage.getItem("studentEmail"));
 
         queueMicrotask(() => {
-            setMissingApplicationContext(!hasApplicationId && !hasEmail);
+            setMissingApplicationContext(!hasDraftId && !hasEmail);
         });
     }, []);
 
     // Redirect to account page after successful upload
     const submitRequirements = async () => {
-        const applicationId: string | null =
-            localStorage.getItem("applicationId") ||
-            localStorage.getItem("enrollmentId");
+        let draftId = localStorage.getItem("enrollmentDraftId") || "";
+
+        if (!draftId) {
+            draftId =
+                typeof crypto !== "undefined" && "randomUUID" in crypto
+                    ? crypto.randomUUID()
+                    : `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            localStorage.setItem("enrollmentDraftId", draftId);
+        }
 
         let email = (localStorage.getItem("studentEmail") || "").trim();
         let contactNumber = (localStorage.getItem("studentContactNumber") || "").trim();
@@ -95,7 +98,7 @@ export default function RequirementsPage() {
             );
         }
 
-        if (!applicationId && !contactNumber) {
+        if (!draftId) {
             throw new Error(
                 "Your enrollment details were not found. Please start a new application from the enrollment form."
             );
@@ -131,7 +134,7 @@ export default function RequirementsPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                applicationId,
+                draftId,
                 email,
                 contactNumber,
                 files: filesToUpload.map(({ kind, file }) => ({
@@ -198,7 +201,7 @@ export default function RequirementsPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    applicationId: prepared.applicationId || applicationId,
+                    draftId: prepared.draftId || draftId,
                     email,
                     contactNumber,
                     studentName,
@@ -213,9 +216,8 @@ export default function RequirementsPage() {
             throw new Error(result?.error || "Document upload failed.");
         }
 
-        if (result.data?.applicationId) {
-            localStorage.setItem("applicationId", result.data.applicationId);
-            localStorage.setItem("enrollmentId", result.data.applicationId);
+        if (result.data?.draftId) {
+            localStorage.setItem("enrollmentDraftId", result.data.draftId);
         }
         if (result.data?.requirements_documents) {
             localStorage.setItem(

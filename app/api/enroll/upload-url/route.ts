@@ -17,10 +17,19 @@ type PrepareFile = {
 
 type PrepareBody = {
   applicationId?: unknown;
+  draftId?: unknown;
   email?: unknown;
   contactNumber?: unknown;
   files?: unknown;
 };
+
+const DRAFT_ID_PATTERN = /^[a-zA-Z0-9-]{8,80}$/;
+
+function draftIdFrom(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const candidate = value.trim();
+  return DRAFT_ID_PATTERN.test(candidate) ? candidate : "";
+}
 
 function isUploadKind(value: unknown): value is UploadKind {
   return (
@@ -66,16 +75,42 @@ export async function POST(request: Request) {
       auth: { persistSession: false },
     });
 
-    const resolved = await resolveApplicationForUpload(supabaseAdmin, body);
+    const draftId = draftIdFrom(body.draftId);
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
 
-    if ("error" in resolved) {
+    if (body.draftId !== undefined && body.draftId !== "" && !draftId) {
       return NextResponse.json(
-        { success: false, error: resolved.error, code: resolved.code },
-        { status: resolved.status }
+        { success: false, error: "The enrollment draft ID is invalid." },
+        { status: 400 }
       );
     }
 
-    const targetRowId = String(resolved.application.id);
+    if (draftId && !email.includes("@")) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "A valid email address is required for the document upload.",
+        },
+        { status: 400 }
+      );
+    }
+
+    let targetRowId = draftId;
+
+    if (!draftId) {
+      const resolved = await resolveApplicationForUpload(supabaseAdmin, body);
+
+      if ("error" in resolved) {
+        return NextResponse.json(
+          { success: false, error: resolved.error, code: resolved.code },
+          { status: resolved.status }
+        );
+      }
+
+      targetRowId = String(resolved.application.id);
+    }
+
     const bucket = await pickStorageBucket(supabaseAdmin);
 
     const uploads: Record<
@@ -123,7 +158,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       bucket,
-      applicationId: targetRowId,
+      applicationId: draftId ? null : targetRowId,
+      draftId: draftId || null,
       uploads,
     });
   } catch (error: unknown) {

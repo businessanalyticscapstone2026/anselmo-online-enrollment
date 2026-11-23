@@ -20,11 +20,20 @@ type CompletedFile = {
 
 type CompleteBody = {
   applicationId?: unknown;
+  draftId?: unknown;
   email?: unknown;
   contactNumber?: unknown;
   studentName?: unknown;
   files?: unknown;
 };
+
+const DRAFT_ID_PATTERN = /^[a-zA-Z0-9-]{8,80}$/;
+
+function draftIdFrom(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const candidate = value.trim();
+  return DRAFT_ID_PATTERN.test(candidate) ? candidate : "";
+}
 
 type StoredDocument = {
   path: string;
@@ -91,16 +100,32 @@ export async function POST(request: Request) {
       auth: { persistSession: false },
     });
 
-    const resolved = await resolveApplicationForUpload(supabaseAdmin, body);
+    const draftId = draftIdFrom(body.draftId);
 
-    if ("error" in resolved) {
+    if (body.draftId !== undefined && body.draftId !== "" && !draftId) {
       return NextResponse.json(
-        { success: false, error: resolved.error, code: resolved.code },
-        { status: resolved.status }
+        { success: false, error: "The enrollment draft ID is invalid." },
+        { status: 400 }
       );
     }
 
-    const targetRowId = String(resolved.application.id);
+    let targetRowId = draftId;
+    let storedEmail = text(body.email);
+
+    if (!draftId) {
+      const resolved = await resolveApplicationForUpload(supabaseAdmin, body);
+
+      if ("error" in resolved) {
+        return NextResponse.json(
+          { success: false, error: resolved.error, code: resolved.code },
+          { status: resolved.status }
+        );
+      }
+
+      targetRowId = String(resolved.application.id);
+      storedEmail = resolved.storedEmail;
+    }
+
     const bucket = await pickStorageBucket(supabaseAdmin);
     const cleanId = cleanStorageSegment(targetRowId);
 
@@ -161,6 +186,8 @@ export async function POST(request: Request) {
     const requirementsDocuments = {
       student_name: studentName || null,
       student_contact: providedContact || null,
+      student_email: storedEmail || null,
+      storage_bucket: bucket,
       birth_certificate: bcResult,
       birth_certificate_url: bcResult.signedUrl || bcResult.publicUrl,
       birth_certificate_path: bcResult.path,
@@ -175,61 +202,66 @@ export async function POST(request: Request) {
       submitted_at: nowIso,
     };
 
-    const fullUpdate: Record<string, unknown> = {
-      requirements_documents: requirementsDocuments,
-      birth_certificate_url: bcResult.signedUrl || bcResult.publicUrl,
-      report_card_url: rcResult.signedUrl || rcResult.publicUrl,
-      other_requirement_url:
-        otherResult?.signedUrl || otherResult?.publicUrl || null,
-      requirements_submitted: true,
-      updated_at: nowIso,
-    };
+    if (!draftId) {
+      const fullUpdate: Record<string, unknown> = {
+        requirements_documents: requirementsDocuments,
+        birth_certificate_url: bcResult.signedUrl || bcResult.publicUrl,
+        report_card_url: rcResult.signedUrl || rcResult.publicUrl,
+        other_requirement_url:
+          otherResult?.signedUrl || otherResult?.publicUrl || null,
+        requirements_submitted: true,
+        updated_at: nowIso,
+      };
 
-    let updateRes = await supabaseAdmin
-      .from("student_applications")
-      .update(fullUpdate)
-      .eq("id", targetRowId)
-      .select("id, requirements_documents");
-
-    // Fallback if extra columns do not exist in the table.
-    if (updateRes.error) {
-      updateRes = await supabaseAdmin
+      let updateRes = await supabaseAdmin
         .from("student_applications")
-        .update({
-          requirements_documents: requirementsDocuments,
-          updated_at: nowIso,
-        })
+        .update(fullUpdate)
         .eq("id", targetRowId)
         .select("id, requirements_documents");
-    }
 
-    if (updateRes.error) {
-      throw new Error(
-        `Failed to record requirements in student_applications: ${updateRes.error.message}`
-      );
-    }
+      // Fallback if extra columns do not exist in the table.
+      if (updateRes.error) {
+        updateRes = await supabaseAdmin
+          .from("student_applications")
+          .update({
+            requirements_documents: requirementsDocuments,
+            updated_at: nowIso,
+          })
+          .eq("id", targetRowId)
+          .select("id, requirements_documents");
+      }
 
-    await logActivity({
-      userType: "Student",
-      userEmail: text(body.email) || resolved.storedEmail || "",
-      action: "Uploaded Enrollment Requirements",
-      details: {
-        applicationId: targetRowId,
-        studentName: studentName || null,
-        documents: {
-          birthCertificate: bcResult.name,
-          reportCard: rcResult.name,
-          form137: otherResult?.name || null,
+      if (updateRes.error) {
+        throw new Error(
+          `Failed to record requirements in student_applications: ${updateRes.error.message}`
+        );
+      }
+
+      await logActivity({
+        userType: "Student",
+        userEmail: text(body.email) || storedEmail || "",
+        action: "Uploaded Enrollment Requirements",
+        details: {
+          applicationId: targetRowId,
+          studentName: studentName || null,
+          documents: {
+            birthCertificate: bcResult.name,
+            reportCard: rcResult.name,
+            form137: otherResult?.name || null,
+          },
+          timestamp: nowIso,
         },
-        timestamp: nowIso,
-      },
-    });
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Requirements uploaded and recorded successfully.",
+      message: draftId
+        ? "Requirements uploaded. They will be recorded when the account step is completed."
+        : "Requirements uploaded and recorded successfully.",
       data: {
-        applicationId: targetRowId,
+        applicationId: draftId ? null : targetRowId,
+        draftId: draftId || null,
         requirements_documents: requirementsDocuments,
         storageBucket: bucket,
       },

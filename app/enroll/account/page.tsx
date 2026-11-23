@@ -20,18 +20,19 @@ export default function AccountPage() {
   const storedEmail = useLocalStorage("studentEmail", "your registered email");
   const storedApplicationId = useLocalStorage("applicationId", "");
   const storedEnrollmentId = useLocalStorage("enrollmentId", "");
+  const storedDraftId = useLocalStorage("enrollmentDraftId", "");
   const storedFeedback = useLocalStorage("emailMessage", "");
-  const accountEmailPending = useLocalStorage(
-    "studentAccountEmailPending",
-    ""
-  );
 
   const [isSending, setIsSending] = useState(false);
   const [apiFeedback, setApiFeedback] = useState<string | null>(null);
+  const [completedApplicationId, setCompletedApplicationId] = useState<
+    string | null
+  >(null);
   const autoSendAttempted = useRef(false);
 
   const email = storedEmail;
-  const applicationId = storedApplicationId || storedEnrollmentId;
+  const applicationId =
+    completedApplicationId || storedApplicationId || storedEnrollmentId;
   const feedbackMessage = apiFeedback || storedFeedback || null;
 
   const triggerSendEmail = useCallback(async (targetEmail: string) => {
@@ -59,46 +60,128 @@ export default function AccountPage() {
           ? localStorage.getItem("studentContactNumber")
           : null) || "";
 
-      if (!currentApplicationId) {
+      if (currentApplicationId) {
+        const response = await fetch("/api/send-account", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: targetEmail,
+            applicationId: currentApplicationId,
+            studentName,
+            track,
+            cluster,
+            contactNumber,
+          }),
+        });
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok || !data?.success || data.authRegistered === false) {
+          setApiFeedback(
+            data?.error ||
+            "Unable to send your portal credentials. Please try again or contact the school registrar."
+          );
+          return;
+        }
+
+        if (data.emailSent === false) {
+          setApiFeedback(
+            data.message ||
+            "Your password was created, but the credential email could not be delivered. Please resend it or contact the school registrar."
+          );
+          return;
+        }
+
+        if (data.message) {
+          setApiFeedback(data.message);
+        }
+        return;
+      }
+
+      const draftId =
+        (typeof window !== "undefined"
+          ? localStorage.getItem("enrollmentDraftId")
+          : null) || "";
+      const draftRaw =
+        typeof window !== "undefined"
+          ? localStorage.getItem("studentApplicationDraft")
+          : null;
+      const requirementsRaw =
+        typeof window !== "undefined"
+          ? localStorage.getItem("studentRequirements")
+          : null;
+
+      if (!draftId || !draftRaw) {
         setApiFeedback(
           "Your enrollment details were not found. Please return to the enrollment form before requesting credentials."
         );
         return;
       }
 
-      const response = await fetch("/api/send-account", {
+      let applicationDraft: Record<string, unknown>;
+      let requirementsDocuments: Record<string, unknown> = {};
+
+      try {
+        const parsed = JSON.parse(draftRaw) as unknown;
+        applicationDraft =
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {};
+      } catch {
+        setApiFeedback(
+          "Your saved enrollment details could not be read. Please return to the enrollment form and submit it again."
+        );
+        return;
+      }
+
+      if (requirementsRaw) {
+        try {
+          const parsed = JSON.parse(requirementsRaw) as unknown;
+          requirementsDocuments =
+            parsed && typeof parsed === "object" && !Array.isArray(parsed)
+              ? (parsed as Record<string, unknown>)
+              : {};
+        } catch {
+          requirementsDocuments = {};
+        }
+      }
+
+      if (!applicationDraft.firstName || !applicationDraft.lastName) {
+        setApiFeedback(
+          "Your saved enrollment details are incomplete. Please return to the enrollment form and submit it again."
+        );
+        return;
+      }
+
+      const response = await fetch("/api/submit-application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: targetEmail,
-          applicationId: currentApplicationId,
-          studentName,
-          track,
-          cluster,
-          contactNumber,
+          ...applicationDraft,
+          finalize: true,
+          draftId,
+          requirementsDocuments,
         }),
       });
       const data = await response.json().catch(() => null);
 
-      if (!response.ok || !data?.success || data.authRegistered === false) {
+      if (
+        !response.ok ||
+        !data?.success ||
+        !data?.id ||
+        data?.emailSent !== true
+      ) {
         setApiFeedback(
+          data?.message ||
           data?.error ||
-          "Unable to send your portal credentials. Please try again or contact the school registrar."
+          "Your enrollment was not saved because the credential email could not be delivered. Please try again."
         );
         return;
       }
 
-      if (data.emailSent === false) {
-        setApiFeedback(
-          data.message ||
-          "Your password was created, but the credential email could not be delivered. Please resend it or contact the school registrar."
-        );
-        return;
-      }
-
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("studentAccountEmailPending");
-      }
+      localStorage.setItem("applicationId", String(data.id));
+      localStorage.setItem("enrollmentId", String(data.id));
+      localStorage.removeItem("studentAccountEmailPending");
+      setCompletedApplicationId(String(data.id));
 
       if (data.message) {
         setApiFeedback(data.message);
@@ -117,8 +200,8 @@ export default function AccountPage() {
     if (
       email &&
       email !== "your registered email" &&
-      applicationId &&
-      accountEmailPending === "true" &&
+      !applicationId &&
+      storedDraftId &&
       !autoSendAttempted.current
     ) {
       autoSendAttempted.current = true;
@@ -133,7 +216,7 @@ export default function AccountPage() {
         clearTimeout(timeoutId);
       };
     }
-  }, [email, applicationId, accountEmailPending, triggerSendEmail]);
+  }, [email, applicationId, storedDraftId, triggerSendEmail]);
 
   return (
     <main className="min-h-screen bg-[#eaf5ec] px-4 py-8">

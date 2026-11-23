@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomInt } from "node:crypto";
 import {
   evaluateEnrollmentAvailability,
@@ -129,6 +129,69 @@ function generatePassword(): string {
   return `AASMNHS - ${digits}`;
 }
 
+async function findExistingAuthUserId(
+  supabase: SupabaseClient,
+  email: string
+): Promise<string | null> {
+  for (let page = 1; page <= 25; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const users = data?.users ?? [];
+    const match = users.find((user) => user.email?.toLowerCase() === email);
+
+    if (match) return match.id;
+    if (users.length < 200) break;
+  }
+
+  return null;
+}
+
+async function rollbackFinalizedEnrollment(
+  supabase: SupabaseClient,
+  applicationId: string | null,
+  userId: string | null
+): Promise<void> {
+  if (userId) {
+    try {
+      await supabase.from("student_profiles").delete().eq("id", userId);
+    } catch (error) {
+      console.warn("Could not remove the student profile during rollback:", error);
+    }
+
+    try {
+      await supabase.from("profiles").delete().eq("id", userId);
+    } catch (error) {
+      console.warn("Could not remove the account profile during rollback:", error);
+    }
+  }
+
+  if (applicationId) {
+    try {
+      await supabase.from("student_applications").delete().eq("id", applicationId);
+    } catch (error) {
+      console.warn("Could not remove the application during rollback:", error);
+    }
+  }
+
+  if (userId) {
+    try {
+      const { error } = await supabase.auth.admin.deleteUser(userId);
+      if (error) {
+        console.warn("Could not remove the auth user during rollback:", error);
+      }
+    } catch (error) {
+      console.warn("Could not remove the auth user during rollback:", error);
+    }
+  }
+}
+
 // Columns every application insert depends on. If the live schema is missing
 // one of these the save fails loudly instead of silently degrading.
 const CORE_APPLICATION_COLUMNS = new Set([
@@ -241,6 +304,8 @@ export async function POST(request: NextRequest) {
 
   let createdUserId: string | null = null;
   let applicationWasSaved = false;
+  let finalizeRequested = false;
+  let savedApplicationId: string | null = null;
 
   try {
     const body: unknown = await request.json();
@@ -252,6 +317,8 @@ export async function POST(request: NextRequest) {
     }
 
     const data = body as Record<string, unknown>;
+    const validateOnly = data.validateOnly === true;
+    finalizeRequested = data.finalize === true;
     const firstName = textValue(data.firstName, 100);
     const middleName = textValue(data.middleName, 100);
     const lastName = textValue(data.lastName, 100);
@@ -680,6 +747,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (validateOnly) {
+      try {
+        const existingUserId = await findExistingAuthUserId(supabase, email);
+
+        if (existingUserId) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "An account with this email address already exists. Please sign in or use the password recovery option.",
+            },
+            { status: 409 }
+          );
+        }
+      } catch (lookupError) {
+        console.warn(
+          "submit-application: could not check the email before validation:",
+          lookupError
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          validated: true,
+          email,
+          message:
+            "Your application details are valid. Complete the requirements to receive your account credentials.",
+        },
+        { status: 200 }
+      );
+    }
+
     const password = generatePassword();
 
     // Auth account is created server-side. Duplicate email is handled by Supabase Auth.
@@ -738,6 +838,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const requirementsDocuments = (() => {
+      const raw = data.requirementsDocuments;
+
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return null;
+      }
+
+      return {
+        ...(raw as Record<string, unknown>),
+        student_email: email,
+      };
+    })();
+
+    const requirementsSubmitted =
+      requirementsDocuments?.requirements_submitted === true;
+
     const studentDetails = {
       email,
       extension,
@@ -771,6 +887,7 @@ export async function POST(request: NextRequest) {
       // that the credential email was delivered.
       credentials_sent: false,
       credentials_sent_at: null,
+      requirements_submitted: requirementsSubmitted,
     };
 
     // Only columns confirmed in the user's current table schema are inserted here.
@@ -827,7 +944,8 @@ export async function POST(request: NextRequest) {
       guardian_first_name: legalGuardian.firstName || null,
       guardian_middle_name: legalGuardian.middleName || null,
       guardian_contact_number: legalGuardian.contactNumber || null,
-      requirements_documents: {},
+      requirements_submitted: requirementsSubmitted,
+      requirements_documents: requirementsDocuments ?? {},
     };
 
     // The live table may not have every extended column yet (email, dedicated
@@ -900,10 +1018,99 @@ export async function POST(request: NextRequest) {
     }
 
     applicationWasSaved = true;
+    savedApplicationId = application.id;
 
     await syncStudentProfile(supabase, application.id, {
       emailMode: "include",
     });
+
+    if (finalizeRequested) {
+      let credentialsSent = false;
+      let credentialError = "";
+
+      try {
+        const sendResponse = await fetch(
+          new URL("/api/send-account", request.url),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email,
+              applicationId: application.id,
+              studentName: `${firstName} ${lastName}`.trim(),
+              track: selectedTrack,
+              cluster: selectedCluster,
+              contactNumber,
+            }),
+            cache: "no-store",
+          }
+        );
+
+        const sendResult = await sendResponse.json().catch(() => null);
+
+        credentialsSent =
+          sendResponse.ok &&
+          Boolean(sendResult?.success) &&
+          sendResult?.emailSent === true;
+
+        if (!credentialsSent) {
+          credentialError =
+            sendResult?.error ||
+            sendResult?.message ||
+            "The credential email could not be delivered.";
+        }
+      } catch (sendError) {
+        credentialError =
+          sendError instanceof Error
+            ? sendError.message
+            : "The credential email could not be delivered.";
+      }
+
+      if (!credentialsSent) {
+        await rollbackFinalizedEnrollment(
+          supabase,
+          application.id,
+          createdUserId
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            emailSent: false,
+            message:
+              credentialError ||
+              "Your enrollment was not saved because the credential email could not be delivered. Please try again.",
+          },
+          { status: 502 }
+        );
+      }
+
+      await logActivity({
+        userType: "Student",
+        userEmail: email,
+        action: "Completed Enrollment Application",
+        details: {
+          applicationId: application.id,
+          userId: createdUserId,
+          studentName: `${firstName} ${lastName}`.trim(),
+          track: selectedTrack || null,
+          cluster: selectedCluster || null,
+          emailSent: true,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          id: application.id,
+          emailSent: true,
+          credentialsRecorded: true,
+          message: `Enrollment completed. Your account credentials were sent to ${email}.`,
+        },
+        { status: 201 }
+      );
+    }
 
     await logActivity({
       userType: "Student",
@@ -919,8 +1126,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Credentials are sent on the final account step after requirements are
-    // uploaded. The draft stays hidden from staff/admin until then.
     return NextResponse.json(
       {
         success: true,
@@ -934,9 +1139,17 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Submit application API error:", error);
 
-    // Roll back the Auth user only when no application row was saved.
-    if (createdUserId && !applicationWasSaved) {
-      try {
+    try {
+      if (createdUserId && finalizeRequested) {
+        const cleanupClient = createClient(supabaseUrl, serviceRoleKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        await rollbackFinalizedEnrollment(
+          cleanupClient,
+          savedApplicationId,
+          createdUserId
+        );
+      } else if (createdUserId && !applicationWasSaved) {
         const cleanupClient = createClient(supabaseUrl, serviceRoleKey, {
           auth: { autoRefreshToken: false, persistSession: false },
         });
@@ -945,9 +1158,9 @@ export async function POST(request: NextRequest) {
         if (deleteError) {
           console.error("Could not roll back unused Auth user:", deleteError);
         }
-      } catch (cleanupError) {
-        console.error("Auth user rollback failed:", cleanupError);
       }
+    } catch (cleanupError) {
+      console.error("Enrollment rollback failed:", cleanupError);
     }
 
     const message =
