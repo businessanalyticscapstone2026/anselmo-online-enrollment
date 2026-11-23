@@ -54,9 +54,9 @@ type SyncOptions = {
   /**
    * Controls whether the applicant email is written to student_profiles.
    * - "auto" (default): copy the email when one already exists in the
-   *   application/profile records (legacy rows and post-delivery syncs).
-   * - "exclude": never write the email (used before credentials are sent).
-   * - "include": write the resolved email (used after delivery).
+   *   application/profile records.
+   * - "exclude": never write the email.
+   * - "include": write the resolved email.
    */
   emailMode?: "auto" | "include" | "exclude";
 };
@@ -151,8 +151,6 @@ export async function syncStudentProfile(
       adviser: text(section.adviser_name) || null,
     };
 
-    // The applicant email is only persisted once the credential email has been
-    // delivered. Before that point the enrollment is just a draft.
     if (emailMode === "include") {
       payload.email = resolvedEmail || null;
     } else if (emailMode === "auto" && resolvedEmail) {
