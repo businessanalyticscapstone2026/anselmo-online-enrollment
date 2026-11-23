@@ -102,6 +102,9 @@ a {
 
 .portal-input {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   border-radius: 0.75rem;
   border: 1px solid var(--mint-300);
   background-color: var(--white);
@@ -113,6 +116,20 @@ a {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/*
+ * iOS Safari gives date inputs an intrinsic width that can ignore width: 100%
+ * and overflow narrow screens. Removing the native appearance makes the field
+ * respect its container while still opening the native date picker on tap.
+ */
+input[type="date"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .portal-input[type="date"] {
   min-width: 0;
   max-width: 100%;
@@ -121,6 +138,11 @@ a {
 .portal-input[type="date"]::-webkit-date-and-time-value {
   min-width: 0;
   text-align: left;
+}
+
+.portal-input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: auto;
+  padding: 0;
 }
 
 .portal-input::placeholder {

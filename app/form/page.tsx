@@ -2007,7 +2007,7 @@ function FormInput({
   autoComplete?: string;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-700">
         {label} {required && <span className="text-red-600">*</span>}
       </label>
