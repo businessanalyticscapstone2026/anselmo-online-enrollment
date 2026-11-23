@@ -1,5 +1,3 @@
-import { statSync } from "node:fs";
-import path from "node:path";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -9,28 +7,23 @@ import {
   Target,
   ArrowDown,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   evaluateEnrollmentAvailability,
   formatManilaDate,
   type EnrollmentSettings,
 } from "@/lib/enrollmentSettings";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/config";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
-function imageVersion(fileName: string): string {
-  try {
-    return String(
-      Math.floor(statSync(path.join(process.cwd(), "public", fileName)).mtimeMs)
-    );
-  } catch {
-    return "1";
-  }
-}
+const IMAGE_VERSION_QUERY = "?v=2";
 
 async function loadEnrollmentSettings(): Promise<EnrollmentSettings | null> {
   try {
-    const supabase = await createClient();
+    const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
     const { data, error } = await supabase
       .from("enrollment_settings")
       .select("id, enrollment_start_date, enrollment_end_date")
@@ -258,10 +251,9 @@ export default async function Home() {
               <div className="overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm">
                 <div className="relative h-44 w-full sm:h-52">
                   <Image
-                    src={`/vision.jpg?v=${imageVersion("vision.jpg")}`}
+                    src={`/vision.jpg${IMAGE_VERSION_QUERY}`}
                     alt="AASMNHS vision"
                     fill
-                    unoptimized
                     className="object-cover"
                     sizes="(max-width: 768px) 100vw, 50vw"
                   />
@@ -282,10 +274,9 @@ export default async function Home() {
               <div className="overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm">
                 <div className="relative h-44 w-full sm:h-52">
                   <Image
-                    src={`/mission.jpg?v=${imageVersion("mission.jpg")}`}
+                    src={`/mission.jpg${IMAGE_VERSION_QUERY}`}
                     alt="AASMNHS mission"
                     fill
-                    unoptimized
                     className="object-cover"
                     sizes="(max-width: 768px) 100vw, 50vw"
                   />
@@ -307,10 +298,9 @@ export default async function Home() {
               <div className="overflow-hidden rounded-xl border border-emerald-700/60 bg-white/10 shadow-xl backdrop-blur-sm md:col-span-2 md:mx-auto md:w-full md:max-w-[calc(50%-0.75rem)]">
                 <div className="relative h-44 w-full sm:h-52">
                   <Image
-                    src={`/core%20values.jpg?v=${imageVersion("core values.jpg")}`}
+                    src={`/core%20values.jpg${IMAGE_VERSION_QUERY}`}
                     alt="AASMNHS core values"
                     fill
-                    unoptimized
                     className="object-cover"
                     sizes="(max-width: 768px) 100vw, 50vw"
                   />

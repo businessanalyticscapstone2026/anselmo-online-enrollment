@@ -357,7 +357,7 @@ export default function StudentDashboardView({
     };
   }, [applicationId, loadData, scheduleReload, sectionId, userId]);
 
-  async function handleLogout() {
+  const handleLogout = useCallback(async () => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -378,7 +378,26 @@ export default function StudentDashboardView({
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();
-  }
+  }, [router]);
+
+  const backGuardRef = useRef(false);
+
+  useEffect(() => {
+    if (!backGuardRef.current) {
+      window.history.pushState({ studentDashboard: true }, "");
+      backGuardRef.current = true;
+    }
+
+    const handlePopState = () => {
+      void handleLogout();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [handleLogout]);
 
   const status = normalizeStatus(
     getText(application, ["status", "application_status", "enrollment_status"]) ||
@@ -428,7 +447,6 @@ export default function StudentDashboardView({
     "created_at",
     "application_date",
   ]);
-  const applicationNumber = getText(application, ["id"]);
   const remarks = getText(application, ["registrar_remarks"]);
 
   const profileStatus =
@@ -647,17 +665,6 @@ export default function StudentDashboardView({
                   </div>
                 </div>
                 <div className="flex flex-col items-stretch gap-3 sm:items-end">
-                  <div className="rounded-xl border border-emerald-200 bg-white/3 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-800">
-                      Application No.
-                    </p>
-                    <p className="mt-1 font-mono text-xs text-emerald-700">
-                      {applicationNumber
-                        ? applicationNumber.slice(0, 8).toUpperCase()
-                        : "Not available"}
-                    </p>
-                  </div>
-
                   <button
                     type="button"
                     onClick={handleDownloadSlip}

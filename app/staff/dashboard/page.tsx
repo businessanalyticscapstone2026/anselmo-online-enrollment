@@ -989,17 +989,15 @@ export default function StaffDashboardPage() {
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
-              <col className="w-[28%]" />
-              <col className="w-[24%]" />
-              <col className="w-[14%]" />
-              <col className="w-[18%]" />
-              <col className="w-[16%]" />
+              <col className="w-[32%]" />
+              <col className="w-[26%]" />
+              <col className="w-[22%]" />
+              <col className="w-[20%]" />
             </colgroup>
             <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900">
               <tr>
                 <th className="px-4 py-3 font-semibold">Student</th>
                 <th className="px-4 py-3 font-semibold">Cluster</th>
-                <th className="px-4 py-3 font-semibold">Application ID</th>
                 <th className="px-4 py-3 font-semibold">Submitted</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
               </tr>
@@ -1009,7 +1007,7 @@ export default function StaffDashboardPage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     className="animate-pulse-soft px-4 py-10 text-center text-emerald-900"
                   >
                     Loading applications...
@@ -1033,10 +1031,6 @@ export default function StaffDashboardPage() {
                         {formatCluster(getCluster(app))}
                       </td>
 
-                      <td className="wrap-break-word px-4 py-4 font-mono text-xs text-emerald-700">
-                        {applicationId.slice(0, 8)}
-                      </td>
-
                       <td className="wrap-break-word px-4 py-4 text-xs text-emerald-900">
                         {getSubmittedDate(app)}
                       </td>
@@ -1055,7 +1049,7 @@ export default function StaffDashboardPage() {
               ) : (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     className="px-4 py-10 text-center text-emerald-900"
                   >
                     {error

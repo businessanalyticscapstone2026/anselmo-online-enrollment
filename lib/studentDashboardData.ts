@@ -47,25 +47,30 @@ export async function getStudentDashboardData(params: {
   let studentProfile: StudentProfileRecord | null = null;
 
   if (params.userId) {
-    const { data, error } = await supabaseAdmin
-      .from("student_applications")
-      .select("*")
-      .eq("user_id", params.userId)
-      .order("submitted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const [applicationResult, profileResult] = await Promise.all([
+      supabaseAdmin
+        .from("student_applications")
+        .select("*")
+        .eq("user_id", params.userId)
+        .order("submitted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("student_profiles")
+        .select("*")
+        .eq("id", params.userId)
+        .maybeSingle(),
+    ]);
 
-    if (error) {
-      console.error("Student dashboard user_id lookup failed:", error);
+    if (applicationResult.error) {
+      console.error(
+        "Student dashboard user_id lookup failed:",
+        applicationResult.error
+      );
     }
 
-    application = (data as StudentApplicationRecord | null) ?? null;
-
-    const profileResult = await supabaseAdmin
-      .from("student_profiles")
-      .select("*")
-      .eq("id", params.userId)
-      .maybeSingle();
+    application =
+      (applicationResult.data as StudentApplicationRecord | null) ?? null;
 
     if (
       profileResult.error &&

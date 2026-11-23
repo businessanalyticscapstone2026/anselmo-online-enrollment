@@ -194,15 +194,8 @@ export async function proxy(request: NextRequest) {
     );
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profileError ? "" : normalizeRole(profile?.role);
-
-  // Legacy login URLs always resolve to the unified page.
+  // Public auth pages never need the role lookup. Legacy login URLs always
+  // resolve to the unified page.
   if (isAdminLoginAlias) {
     return redirectWithCookies(request, `${LOGIN}?area=admin`, response);
   }
@@ -211,16 +204,17 @@ export async function proxy(request: NextRequest) {
     return redirectWithCookies(request, `${LOGIN}?area=staff`, response);
   }
 
-  if (isAdminRecovery || isStaffPublic) {
+  if (isAdminRecovery || isStaffPublic || isLogin) {
     return response;
   }
 
-  // Unified login always shows the form. A previous session must never bring
-  // the visitor straight back into the account they used before closing the
-  // tab, pressing Back, or navigating away without logging out.
-  if (isLogin) {
-    return response;
-  }
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role = profileError ? "" : normalizeRole(profile?.role);
 
   if (isStudentArea) {
     if (isAdminRole(role)) {

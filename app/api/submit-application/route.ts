@@ -721,11 +721,13 @@ export async function POST(request: NextRequest) {
     // The profile row may be created by a database trigger that only reads
     // user_metadata. Upsert the display name here as well so new accounts never
     // appear as "Unnamed User" in the admin dashboard or activity logs.
+    // The email is intentionally not stored yet: it is only persisted after
+    // the credential email is sent on the final account step.
     const { error: profileError } = await supabase.from("profiles").upsert(
       {
         id: createdUserId,
-        email,
         full_name: studentFullName,
+        email: null,
         role: "student",
       },
       { onConflict: "id" }
@@ -738,7 +740,6 @@ export async function POST(request: NextRequest) {
     }
 
     const studentDetails = {
-      email,
       extension,
       lrn: lrn || null,
       college_course: collegeCourse || null,
@@ -779,7 +780,6 @@ export async function POST(request: NextRequest) {
       first_name: firstName,
       middle_name: middleName || null,
       last_name: lastName,
-      email,
       lrn: lrn || null,
       birth_date: birthDate || null,
       age,
@@ -826,10 +826,10 @@ export async function POST(request: NextRequest) {
       guardian_first_name: legalGuardian.firstName || null,
       guardian_middle_name: legalGuardian.middleName || null,
       guardian_contact_number: legalGuardian.contactNumber || null,
-      // Store the applicant email in an always-present jsonb column so the
-      // requirements/account steps can verify identity even before the email
-      // column migration is applied.
-      requirements_documents: { student_email: email },
+      // The applicant email is intentionally left out of the draft. It is
+      // written to the application only after the credential email is sent on
+      // the final account step.
+      requirements_documents: {},
     };
 
     // The live table may not have every extended column yet (email, dedicated
@@ -903,7 +903,9 @@ export async function POST(request: NextRequest) {
 
     applicationWasSaved = true;
 
-    await syncStudentProfile(supabase, application.id);
+    await syncStudentProfile(supabase, application.id, {
+      emailMode: "exclude",
+    });
 
     await logActivity({
       userType: "Student",

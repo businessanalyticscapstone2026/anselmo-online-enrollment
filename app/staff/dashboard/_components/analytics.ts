@@ -1,6 +1,5 @@
 import {
   TRACKS,
-  getTrackConfig,
   normalizeTrack,
   type TrackValue,
 } from "@/lib/clusters";
@@ -28,31 +27,6 @@ export type ClusterDatum = {
   percentage: number;
 };
 
-export type WeeklyBucket = {
-  key: string;
-  label: string;
-  start: Date;
-  end: Date;
-};
-
-export type TrackSeries = {
-  track: TrackValue;
-  label: string;
-  color: string;
-  values: number[];
-  total: number;
-};
-
-export type WeeklyTrackTrend = {
-  buckets: WeeklyBucket[];
-  series: TrackSeries[];
-  maxValue: number;
-  plottedCount: number;
-  trackedCount: number;
-  untrackedCount: number;
-  outsideWindowCount: number;
-};
-
 const GENDER_COLORS: Record<string, string> = {
   Male: "#6ba8c7",
   Female: "#d58aa1",
@@ -69,11 +43,6 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
   { label: "19", min: 19, max: 19 },
   { label: "20 and above", min: 20, max: 120 },
 ];
-
-const TRACK_COLORS: Record<TrackValue, string> = {
-  academic: "#c8b27c",
-  techpro: "#6ba8c7",
-};
 
 const ALL_CLUSTERS = TRACKS.flatMap((track) => [...track.clusters]);
 
@@ -319,114 +288,6 @@ export function buildClusterBreakdown(applications: ApplicationRecord[]) {
   };
 }
 
-function startOfWeek(date: Date): Date {
-  const result = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  );
-  const day = result.getDay();
-  result.setDate(result.getDate() - ((day + 6) % 7));
-  return result;
-}
-
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function formatWeekLabel(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-export function buildWeeklyTrackTrend(
-  applications: ApplicationRecord[],
-  weekCount = 8,
-  now = new Date()
-): WeeklyTrackTrend {
-  const currentWeekStart = startOfWeek(now);
-  const firstWeekStart = addDays(currentWeekStart, -(weekCount - 1) * 7);
-
-  const buckets: WeeklyBucket[] = Array.from(
-    { length: weekCount },
-    (_, index) => {
-      const start = addDays(firstWeekStart, index * 7);
-      const end = addDays(start, 7);
-
-      return {
-        key: start.toISOString(),
-        label: formatWeekLabel(start),
-        start,
-        end,
-      };
-    }
-  );
-
-  const series: TrackSeries[] = TRACKS.map((track) => ({
-    track: track.value,
-    label: track.shortLabel,
-    color: TRACK_COLORS[track.value],
-    values: Array.from({ length: weekCount }, () => 0),
-    total: 0,
-  }));
-
-  let trackedCount = 0;
-  let plottedCount = 0;
-  let outsideWindowCount = 0;
-
-  for (const application of applications) {
-    const track = getTrack(application);
-    if (!track) continue;
-
-    trackedCount += 1;
-
-    const date = getSubmittedDate(application);
-    if (!date) {
-      outsideWindowCount += 1;
-      continue;
-    }
-
-    const bucketIndex = buckets.findIndex(
-      (bucket) => date >= bucket.start && date < bucket.end
-    );
-
-    if (bucketIndex === -1) {
-      outsideWindowCount += 1;
-      continue;
-    }
-
-    const matchingSeries = series.find((item) => item.track === track);
-    if (!matchingSeries) continue;
-
-    matchingSeries.values[bucketIndex] += 1;
-    matchingSeries.total += 1;
-    plottedCount += 1;
-  }
-
-  const maxValue = Math.max(
-    0,
-    ...series.flatMap((item) => item.values)
-  );
-
-  return {
-    buckets,
-    series,
-    maxValue,
-    plottedCount,
-    trackedCount,
-    untrackedCount: Math.max(applications.length - trackedCount, 0),
-    outsideWindowCount,
-  };
-}
-
-export function getTrackLabelShort(track: TrackValue): string {
-  return getTrackConfig(track)?.shortLabel ?? track;
-}
-
 export function getStatus(record: ApplicationRecord): EnrollmentStatus {
   return normalizeEnrollmentStatus(record.status);
 }
@@ -453,10 +314,6 @@ export function getCollegeCourse(record: ApplicationRecord): string {
     readText(record, ["college_course", "collegeCourse"]) ||
     readText(details, ["college_course"])
   );
-}
-
-export function getAssignedSectionId(record: ApplicationRecord): string {
-  return readText(record, ["assigned_section_id"]);
 }
 
 export function hasRequirements(record: ApplicationRecord): boolean {
@@ -553,15 +410,6 @@ export function buildCountBreakdown(
   return { data, total, other };
 }
 
-export type DailyTrendPoint = {
-  key: string;
-  label: string;
-  total: number;
-  enrolled: number;
-  pending: number;
-  rejected: number;
-};
-
 function manilaDateKey(date: Date): string {
   return date.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
 }
@@ -645,47 +493,4 @@ export function buildClusterDailyTrend(
   }
 
   return { keys, points, total, otherKey };
-}
-
-export function buildDailyTrend(
-  applications: ApplicationRecord[],
-  days = 14,
-  now = new Date()
-): DailyTrendPoint[] {
-  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
-  const points: DailyTrendPoint[] = [];
-  const indexByKey = new Map<string, number>();
-
-  for (let offset = safeDays - 1; offset >= 0; offset -= 1) {
-    const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
-    const key = manilaDateKey(date);
-
-    indexByKey.set(key, points.length);
-    points.push({
-      key,
-      label: date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        timeZone: "Asia/Manila",
-      }),
-      total: 0,
-      enrolled: 0,
-      pending: 0,
-      rejected: 0,
-    });
-  }
-
-  for (const application of applications) {
-    const submitted = getSubmittedDate(application);
-    if (!submitted) continue;
-
-    const index = indexByKey.get(manilaDateKey(submitted));
-    if (index === undefined) continue;
-
-    const point = points[index];
-    point.total += 1;
-    point[normalizeEnrollmentStatus(application.status)] += 1;
-  }
-
-  return points;
 }

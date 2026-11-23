@@ -61,7 +61,7 @@ export default function AccountPage() {
 
       if (!currentApplicationId) {
         setApiFeedback(
-          "Your application ID was not found. Please return to the enrollment form before requesting credentials."
+          "Your enrollment details were not found. Please return to the enrollment form before requesting credentials."
         );
         return;
       }

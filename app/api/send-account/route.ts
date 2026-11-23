@@ -7,6 +7,7 @@ import { hasValidMfaCookie } from "@/lib/auth/mfaCookie";
 import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 import { getTrackLabel } from "@/lib/clusters";
 import { logActivity } from "@/lib/activityLog";
+import { syncStudentProfile } from "@/lib/studentProfiles";
 
 export async function POST(request: Request) {
   try {
@@ -303,15 +304,8 @@ export async function POST(request: Request) {
         const linkPayloads = [
           {
             user_id: authUserId,
-            email: cleanEmail,
             track: cleanTrack,
             selected_cluster: cleanCluster || null,
-            updated_at: nowIso,
-          },
-          {
-            user_id: authUserId,
-            email: cleanEmail,
-            track: cleanTrack,
             updated_at: nowIso,
           },
           {
@@ -380,7 +374,6 @@ export async function POST(request: Request) {
           await supabaseAdmin.from("profiles").insert({
             id: authUserId,
             full_name: studentName,
-            email: cleanEmail,
             role: "student",
           });
         } else {
@@ -393,7 +386,6 @@ export async function POST(request: Request) {
               .from("profiles")
               .update({
                 full_name: studentName,
-                email: cleanEmail,
                 role: existingRole || "student",
               })
               .eq("id", authUserId);
@@ -596,9 +588,10 @@ export async function POST(request: Request) {
     }
 
     // Staff/admin lists only display applications after the credential email
-    // has actually been delivered. Persist that confirmation in the same
-    // jsonb payload used to build the enrollment draft.
+    // has actually been delivered. The applicant email is persisted here too:
+    // it must not be saved while the enrollment is still an unfinished draft.
     let credentialsRecorded = false;
+    let credentialsApplicationId: string | null = null;
 
     if (emailSent) {
       try {
@@ -612,33 +605,62 @@ export async function POST(request: Request) {
           );
 
         let applicationRows:
-          | Array<{ id: string; student_details?: unknown }>
+          | Array<{
+              id: string;
+              student_details?: unknown;
+              requirements_documents?: unknown;
+            }>
           | null = null;
         let lookupError: { message?: string } | null = null;
 
         if (targetIsUuid) {
           const result = await supabaseAdmin
             .from("student_applications")
-            .select("id, student_details")
+            .select("id, student_details, requirements_documents")
             .eq("id", targetApplicationId)
             .limit(1);
           applicationRows = (result.data ?? null) as
-            | Array<{ id: string; student_details?: unknown }>
+            | Array<{
+                id: string;
+                student_details?: unknown;
+                requirements_documents?: unknown;
+              }>
             | null;
           lookupError = result.error;
         } else {
           const result = await supabaseAdmin
             .from("student_applications")
-            .select("id, student_details")
+            .select("id, student_details, requirements_documents")
             .ilike("email", cleanEmail)
             .limit(1);
           applicationRows = (result.data ?? null) as
-            | Array<{ id: string; student_details?: unknown }>
+            | Array<{
+                id: string;
+                student_details?: unknown;
+                requirements_documents?: unknown;
+              }>
             | null;
           lookupError = result.error;
         }
 
         const application = applicationRows?.[0];
+
+        const toRecord = (value: unknown): Record<string, unknown> => {
+          if (typeof value === "string") {
+            try {
+              const parsed: unknown = JSON.parse(value);
+              return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                ? (parsed as Record<string, unknown>)
+                : {};
+            } catch {
+              return {};
+            }
+          }
+
+          return value && typeof value === "object" && !Array.isArray(value)
+            ? (value as Record<string, unknown>)
+            : {};
+        };
 
         if (lookupError) {
           console.warn(
@@ -646,48 +668,77 @@ export async function POST(request: Request) {
             lookupError.message
           );
         } else if (application) {
-          const storedDetails = application.student_details;
-          let details: Record<string, unknown> = {};
+          const details = toRecord(application.student_details);
+          const documents = toRecord(application.requirements_documents);
 
-          if (typeof storedDetails === "string") {
-            try {
-              const parsed: unknown = JSON.parse(storedDetails);
-              if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                details = parsed as Record<string, unknown>;
-              }
-            } catch {
-              details = {};
-            }
-          } else if (
-            storedDetails &&
-            typeof storedDetails === "object" &&
-            !Array.isArray(storedDetails)
-          ) {
-            details = storedDetails as Record<string, unknown>;
-          }
+          const updatePayload: Record<string, unknown> = {
+            student_details: {
+              ...details,
+              email: cleanEmail,
+              credentials_sent: true,
+              credentials_sent_at: credentialsSentAt,
+            },
+            requirements_documents: {
+              ...documents,
+              student_email: cleanEmail,
+            },
+            updated_at: credentialsSentAt,
+          };
 
-          const { error: markError } = await supabaseAdmin
+          let markError: { message?: string } | null = null;
+
+          const withEmail = await supabaseAdmin
             .from("student_applications")
-            .update({
-              student_details: {
-                ...details,
-                credentials_sent: true,
-                credentials_sent_at: credentialsSentAt,
-              },
-            })
+            .update({ ...updatePayload, email: cleanEmail })
             .eq("id", application.id);
+
+          markError = withEmail.error;
+
+          if (
+            markError &&
+            /email|column|schema cache/i.test(markError.message || "")
+          ) {
+            const withoutEmail = await supabaseAdmin
+              .from("student_applications")
+              .update(updatePayload)
+              .eq("id", application.id);
+            markError = withoutEmail.error;
+          }
 
           if (markError) {
             console.warn(
-              "Could not mark credentials as sent on the application:",
+              "Could not record the credentials-sent email on the application:",
               markError.message
             );
           } else {
             credentialsRecorded = true;
+            credentialsApplicationId = application.id;
           }
         }
       } catch (markError) {
         console.warn("Credentials-sent tracking notice:", markError);
+      }
+    }
+
+    // Mirror the delivered email into the account/profile tables now that the
+    // enrollment is complete and the credentials have actually been sent.
+    if (emailSent && authUserId) {
+      try {
+        await supabaseAdmin
+          .from("profiles")
+          .update({ email: cleanEmail })
+          .eq("id", authUserId);
+
+        if (credentialsApplicationId) {
+          await syncStudentProfile(supabaseAdmin, credentialsApplicationId, {
+            emailMode: "include",
+          });
+        }
+      } catch (profileEmailError) {
+        console.warn(
+          "Could not store the account email after delivery:",
+          profileEmailError
+        );
       }
     }
 

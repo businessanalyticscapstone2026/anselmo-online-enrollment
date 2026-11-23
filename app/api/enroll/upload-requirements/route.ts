@@ -464,11 +464,11 @@ export async function POST(request: Request) {
       otherResult = await uploadFile(form137, "other-requirements");
     }
 
-    // 3. Construct requirements_documents jsonb
+    // 3. Construct requirements_documents jsonb. The applicant email is not
+    // stored here until the credential email is sent on the final step.
     const nowIso = new Date().toISOString();
     const requirementsDocuments = {
       student_name: studentName || null,
-      student_email: email || null,
       student_contact: contactNumber || null,
       birth_certificate: bcResult,
       birth_certificate_url: bcResult.signedUrl || bcResult.publicUrl,
@@ -494,10 +494,6 @@ export async function POST(request: Request) {
       requirements_submitted: true,
       updated_at: nowIso,
     };
-
-    if (providedEmail) {
-      fullUpdate.email = providedEmail;
-    }
 
     let updateRes = await supabaseAdmin
       .from("student_applications")

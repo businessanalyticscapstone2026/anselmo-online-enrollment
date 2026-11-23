@@ -120,10 +120,6 @@ export async function GET() {
     const adviser =
       text(studentProfile, ["adviser"]) ||
       text(section, ["adviser_name", "adviser"]);
-    const applicationNumber =
-      text(application, ["id"]) ||
-      text(studentProfile, ["application_number"]) ||
-      auth.user.id;
     const displayStatus = /approved/i.test(rawStatus)
       ? "Approved"
       : "Enrolled";
@@ -141,7 +137,6 @@ export async function GET() {
       cluster,
       section: sectionName,
       adviser,
-      applicationNumber,
       issuedAt,
     });
 

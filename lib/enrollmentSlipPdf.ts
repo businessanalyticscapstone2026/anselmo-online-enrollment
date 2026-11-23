@@ -14,7 +14,6 @@ export type EnrollmentSlipPdfData = {
   cluster: string;
   section: string;
   adviser: string;
-  applicationNumber: string;
   issuedAt: string;
 };
 
@@ -214,8 +213,8 @@ export function generateEnrollmentSlipPdf(
 
   const rows = [
     [
-      ["Application No.", data.applicationNumber],
       ["Status", data.status],
+      ["Date Issued", data.issuedAt],
     ],
     [
       ["Senior High Track", data.track],
@@ -225,10 +224,7 @@ export function generateEnrollmentSlipPdf(
       ["Assigned Section", data.section],
       ["Adviser", data.adviser],
     ],
-    [
-      ["Email Address", data.email],
-      ["Date Issued", data.issuedAt],
-    ],
+    [["Email Address", data.email]],
   ];
 
   rows.forEach((row, rowIndex) => {

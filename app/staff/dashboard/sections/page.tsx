@@ -9,7 +9,7 @@ import { DEFAULT_SECTIONS, getSectionCluster, type SectionRecord } from "@/lib/s
 import { TRACKS, getTrackLabel, getClustersForTrack, getTrackForCluster, normalizeTrack, type TrackValue } from "@/lib/clusters";
 import { filterVisibleApplications } from "@/lib/applicationVisibility";
 import { supabase } from "@/lib/supabaseClient";
-import { RefreshCw, Save, AlertCircle, Users, CheckCircle2, Info, Plus, Pencil, Trash2, X, Lock } from "lucide-react";
+import { RefreshCw, Save, AlertCircle, Users, CheckCircle2, Info, Plus, Pencil, Trash2, X } from "lucide-react";
 
 type App = {
   id: string;
@@ -42,6 +42,13 @@ function trackSortOrder(track: TrackValue | null): number {
   if (track === "academic") return 0;
   if (track === "techpro") return 1;
   return 2;
+}
+
+function hasSectionAssignment(app: App): boolean {
+  return (
+    app.assigned_section_id != null &&
+    String(app.assigned_section_id).trim() !== ""
+  );
 }
 
 function firstText(...values: unknown[]): string {
@@ -88,15 +95,14 @@ export default function SectionsPage() {
   const [apps, setApps] = useState<App[]>([]);
   const [sections, setSections] = useState<Section[]>(defaultSections);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
-  const [lockedIds, setLockedIds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"enrolled" | "pending">(
-    "enrolled"
-  );
+  const [assignmentFilter, setAssignmentFilter] = useState<
+    "assigned" | "unassigned"
+  >("unassigned");
   const [trackFilter, setTrackFilter] = useState<"all" | TrackValue>("all");
   const [clusterFilter, setClusterFilter] = useState("");
   const [usingDefaultSections, setUsingDefaultSections] = useState(false);
@@ -122,11 +128,16 @@ export default function SectionsPage() {
     setHasRemoteUpdates(false);
 
     try {
-      // 1. Fetch applications with select("*") to be 100% resilient
-      const appsRes = await supabase
-        .from("student_applications")
-        .select("*")
-        .order("submitted_at", { ascending: false });
+      // Fetch both tables in parallel so the module renders sooner.
+      const [appsRes, sectionsRes] = await Promise.all([
+        supabase
+          .from("student_applications")
+          .select("*")
+          .order("submitted_at", { ascending: false }),
+        Promise.resolve(
+          supabase.from("sections").select("*").order("name")
+        ).catch(() => null),
+      ]);
 
       if (appsRes.error) {
         setError(`Applications: ${appsRes.error.message}`);
@@ -144,39 +155,33 @@ export default function SectionsPage() {
         setApps(applicationList);
 
         const initialAssignments: Record<string, string> = {};
-        const initialLocked: Record<string, boolean> = {};
         applicationList.forEach((r) => {
           const assigned =
             r.assigned_section_id != null
               ? String(r.assigned_section_id)
               : "";
           initialAssignments[r.id] = assigned;
-          initialLocked[r.id] = Boolean(assigned);
         });
         setAssignments(initialAssignments);
-        setLockedIds(initialLocked);
       }
 
-      // 2. Fetch sections table if it exists
-      try {
-        const sectionsRes = await supabase
-          .from("sections")
-          .select("*")
-          .order("name");
-
-        if (!sectionsRes.error && sectionsRes.data && sectionsRes.data.length > 0) {
-          setSections(sectionsRes.data as Section[]);
-          setUsingDefaultSections(false);
-        } else {
-          setSections(defaultSections);
-          setUsingDefaultSections(true);
-          if (sectionsRes.error) {
-            setError(`Sections: ${sectionsRes.error.message}`);
-          }
-        }
-      } catch {
+      // Sections table may not exist yet; fall back to the built-in list.
+      if (!sectionsRes) {
         setSections(defaultSections);
         setUsingDefaultSections(true);
+      } else if (
+        !sectionsRes.error &&
+        sectionsRes.data &&
+        sectionsRes.data.length > 0
+      ) {
+        setSections(sectionsRes.data as Section[]);
+        setUsingDefaultSections(false);
+      } else {
+        setSections(defaultSections);
+        setUsingDefaultSections(true);
+        if (sectionsRes.error) {
+          setError(`Sections: ${sectionsRes.error.message}`);
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load sections data.");
@@ -232,13 +237,6 @@ export default function SectionsPage() {
   async function save(id: string) {
     setMessage("");
     setError("");
-
-    if (lockedIds[id]) {
-      setError(
-        "This student already has an assigned section. Section assignments are final and can no longer be changed."
-      );
-      return;
-    }
 
     setSaving(id);
 
@@ -296,7 +294,13 @@ export default function SectionsPage() {
       }
 
       setAssignments((prev) => ({ ...prev, [id]: savedSectionId }));
-      setLockedIds((prev) => ({ ...prev, [id]: Boolean(savedSectionId) }));
+      setApps((prev) =>
+        prev.map((app) =>
+          app.id === id
+            ? { ...app, assigned_section_id: savedSectionId || null }
+            : app
+        )
+      );
       setHasRemoteUpdates(false);
 
       const emailNotice = result.data?.emailSent
@@ -459,7 +463,8 @@ export default function SectionsPage() {
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     const list = apps.filter((a) => {
-      if (normalizeEnrollmentStatus(a.status) !== statusFilter) return false;
+      const assigned = hasSectionAssignment(a);
+      if (assignmentFilter === "assigned" ? !assigned : assigned) return false;
       const name = `${a.first_name ?? ""} ${a.middle_name ?? ""} ${a.last_name ?? ""} ${a.id ?? ""}`.toLowerCase();
       return name.includes(term);
     });
@@ -484,7 +489,7 @@ export default function SectionsPage() {
     return trackMatched.filter(
       (a) => resolveApplicationCluster(a).trim().toLowerCase() === targetCluster
     );
-  }, [apps, search, trackFilter, statusFilter, clusterFilter]);
+  }, [apps, search, trackFilter, assignmentFilter, clusterFilter]);
 
   const sectionsByTrack = useMemo(
     () =>
@@ -566,7 +571,7 @@ export default function SectionsPage() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search student by name or application ID…"
+          placeholder="Search student by name…"
           className="flex-1 rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm text-emerald-700 outline-none placeholder:text-emerald-800 focus:border-emerald-200"
         />
       </div>
@@ -685,35 +690,37 @@ export default function SectionsPage() {
           <div>
             <h2 className="font-semibold">Student Section Assignments</h2>
             <p className="mt-1 text-xs text-emerald-800">
-              Select a section for each student to link their adviser. Once a
-              section is saved, it is locked and can no longer be changed.
+              Select a section for each student to link their adviser. You can
+              change a student&apos;s section at any time by choosing another
+              section and saving.
             </p>
           </div>
           <span className="text-xs text-emerald-700 font-mono">
-            {filtered.length} {statusFilter} student
+            {filtered.length} {assignmentFilter} student
             {filtered.length === 1 ? "" : "s"}
           </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-emerald-200 px-5 py-3">
           <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-            Status
+            Assignment
           </span>
           {(
             [
-              { value: "enrolled", label: "Enrolled" },
-              { value: "pending", label: "Pending" },
+              { value: "assigned", label: "Assigned" },
+              { value: "unassigned", label: "Unassigned" },
             ] as const
           ).map((option) => {
-            const active = statusFilter === option.value;
+            const active = assignmentFilter === option.value;
             const count = apps.filter(
-              (a) => normalizeEnrollmentStatus(a.status) === option.value
+              (a) =>
+                hasSectionAssignment(a) === (option.value === "assigned")
             ).length;
             return (
               <button
                 key={option.value}
                 type="button"
-                onClick={() => setStatusFilter(option.value)}
+                onClick={() => setAssignmentFilter(option.value)}
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                   active
                     ? "border-emerald-400 bg-emerald-600 text-white"
@@ -745,13 +752,14 @@ export default function SectionsPage() {
             ] as const
           ).map((option) => {
             const active = trackFilter === option.value;
-            const statusApps = apps.filter(
-              (a) => normalizeEnrollmentStatus(a.status) === statusFilter
+            const assignmentApps = apps.filter(
+              (a) =>
+                hasSectionAssignment(a) === (assignmentFilter === "assigned")
             );
             const count =
               option.value === "all"
-                ? statusApps.length
-                : statusApps.filter(
+                ? assignmentApps.length
+                : assignmentApps.filter(
                     (a) =>
                       normalizeTrack(resolveApplicationTrack(a)) === option.value
                   ).length;
@@ -875,7 +883,6 @@ export default function SectionsPage() {
                     return groups;
                   }, []);
                   const currentSectionId = assignments[a.id] ?? "";
-                  const locked = Boolean(lockedIds[a.id]);
                   const currentSection =
                     currentSectionId &&
                     !matchingSections.some(
@@ -915,61 +922,47 @@ export default function SectionsPage() {
                         </span>
                       </td>
                       <td className="px-3 py-4">
-                        {locked ? (
-                          <div className="w-full rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2.5 text-xs font-semibold text-emerald-800">
-                            <span className="flex items-start gap-1.5">
-                              <Lock size={13} className="mt-0.5 shrink-0" />
-                              <span className="min-w-0 wrap-break-word">
-                                {selected?.name || "Assigned section"}
-                              </span>
-                            </span>
-                            <span className="mt-0.5 block text-[10px] font-normal text-emerald-700">
-                              Locked — cannot be changed
-                            </span>
-                          </div>
-                        ) : (
-                          <select
-                            value={assignments[a.id] ?? ""}
-                            onChange={(e) =>
-                              setAssignments((p) => ({
-                                ...p,
-                                [a.id]: e.target.value,
-                              }))
-                            }
-                            className="w-full rounded-lg border border-emerald-200 bg-white px-2 py-2.5 text-xs text-emerald-700 outline-none focus:border-emerald-200"
-                          >
-                            <option value="">— Unassigned —</option>
-                            {matchingSections.length === 0 && (
-                              <option value="" disabled>
-                                {normalizedStudentCluster
-                                  ? `No sections for ${studentCluster}`
-                                  : studentTrackValue
-                                    ? `No ${getTrackLabel(studentTrack)} sections`
-                                    : "No sections available"}
+                        <select
+                          value={assignments[a.id] ?? ""}
+                          onChange={(e) =>
+                            setAssignments((p) => ({
+                              ...p,
+                              [a.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border border-emerald-200 bg-white px-2 py-2.5 text-xs text-emerald-700 outline-none focus:border-emerald-200"
+                        >
+                          <option value="">— Unassigned —</option>
+                          {matchingSections.length === 0 && (
+                            <option value="" disabled>
+                              {normalizedStudentCluster
+                                ? `No sections for ${studentCluster}`
+                                : studentTrackValue
+                                  ? `No ${getTrackLabel(studentTrack)} sections`
+                                  : "No sections available"}
+                            </option>
+                          )}
+                          {currentSection && (
+                            <optgroup label="Current assignment">
+                              <option value={String(currentSection.id)}>
+                                {currentSection.name}
+                                {currentSection.school_year
+                                  ? ` · ${currentSection.school_year}`
+                                  : ""}
                               </option>
-                            )}
-                            {currentSection && (
-                              <optgroup label="Current assignment">
-                                <option value={String(currentSection.id)}>
-                                  {currentSection.name}
-                                  {currentSection.school_year
-                                    ? ` · ${currentSection.school_year}`
-                                    : ""}
+                            </optgroup>
+                          )}
+                          {sectionGroups.map((group) => (
+                            <optgroup key={group.cluster} label={group.cluster}>
+                              {group.sections.map((s) => (
+                                <option key={s.id} value={String(s.id)}>
+                                  {s.name}
+                                  {s.school_year ? ` · ${s.school_year}` : ""}
                                 </option>
-                              </optgroup>
-                            )}
-                            {sectionGroups.map((group) => (
-                              <optgroup key={group.cluster} label={group.cluster}>
-                                {group.sections.map((s) => (
-                                  <option key={s.id} value={String(s.id)}>
-                                    {s.name}
-                                    {s.school_year ? ` · ${s.school_year}` : ""}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        )}
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
                       </td>
                       <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
                         {selected?.adviser_name ? (
@@ -987,24 +980,14 @@ export default function SectionsPage() {
                         )}
                       </td>
                       <td className="px-3 py-4">
-                        {locked ? (
-                          <span
-                            title="Section assignments are final and cannot be changed once saved."
-                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-100 px-2.5 py-2 text-xs font-semibold text-emerald-800"
-                          >
-                            <Lock size={14} />
-                            Locked
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => save(a.id)}
-                            disabled={saving === a.id}
-                            className="inline-flex items-center gap-1 rounded-lg bg-yellow-300 px-2.5 py-2 text-xs font-bold text-emerald-950 hover:bg-yellow-300 disabled:opacity-60"
-                          >
-                            <Save size={14} />
-                            {saving === a.id ? "Saving…" : "Save"}
-                          </button>
-                        )}
+                        <button
+                          onClick={() => save(a.id)}
+                          disabled={saving === a.id}
+                          className="inline-flex items-center gap-1 rounded-lg bg-yellow-300 px-2.5 py-2 text-xs font-bold text-emerald-950 hover:bg-yellow-300 disabled:opacity-60"
+                        >
+                          <Save size={14} />
+                          {saving === a.id ? "Saving…" : "Save"}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1016,7 +999,7 @@ export default function SectionsPage() {
                     className="px-3 py-10 text-center text-emerald-900"
                   >
                     <Users className="mx-auto mb-2 opacity-50" size={24} />
-                    No {statusFilter} students found.
+                    No {assignmentFilter} students found.
                   </td>
                 </tr>
               )}

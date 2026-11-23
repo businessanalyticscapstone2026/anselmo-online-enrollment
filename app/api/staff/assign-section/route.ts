@@ -192,19 +192,6 @@ export async function POST(request: Request) {
         ? String(application.assigned_section_id)
         : null;
 
-    // Once a student has a section it is final: the assignment can never be
-    // changed or cleared, even through a direct API call.
-    if (previousSectionId && previousSectionId !== sectionId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "This student already has an assigned section. Section assignments are final and can no longer be changed.",
-        },
-        { status: 409 }
-      );
-    }
-
     const now = new Date().toISOString();
 
     let updateResult = await supabaseAdmin

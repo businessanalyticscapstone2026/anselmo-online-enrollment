@@ -759,7 +759,7 @@ export default function ApplicationsPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search student name, email, or application ID…"
+            placeholder="Search student name or email…"
             className="w-full rounded-lg border border-emerald-200 bg-white py-3 pl-10 pr-3 text-sm text-emerald-700 outline-none placeholder:text-emerald-800 focus:border-emerald-200"
           />
         </div>
