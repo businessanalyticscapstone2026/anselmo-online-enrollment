@@ -816,11 +816,6 @@ function FormContent() {
     setIsSubmitting(true);
 
     try {
-      const draftId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
       const response = await fetch("/api/submit-application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -829,12 +824,14 @@ function FormContent() {
 
       const result = await response.json().catch(() => null);
 
-      if (!response.ok || !result?.success) {
+      if (!response.ok || !result?.success || !result?.draftId) {
         throw new Error(
           result?.message ||
           `The application could not be validated. Server returned ${response.status}.`
         );
       }
+
+      const draftId = String(result.draftId);
 
       // Clear details from any previous enrollment before storing the new one.
       localStorage.removeItem("studentPassword");

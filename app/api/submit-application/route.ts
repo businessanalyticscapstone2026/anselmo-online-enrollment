@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   evaluateEnrollmentAvailability,
   type EnrollmentSettings,
@@ -772,6 +772,7 @@ export async function POST(request: NextRequest) {
         {
           success: true,
           validated: true,
+          draftId: randomUUID(),
           email,
           message:
             "Your application details are valid. Complete the requirements to receive your account credentials.",
@@ -838,7 +839,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const requirementsDocuments = (() => {
+    const requirementsDocuments: Record<string, unknown> | null = (() => {
       const raw = data.requirementsDocuments;
 
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

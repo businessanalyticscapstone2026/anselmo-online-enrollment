@@ -56,15 +56,7 @@ export default function RequirementsPage() {
 
     // Redirect to account page after successful upload
     const submitRequirements = async () => {
-        let draftId = localStorage.getItem("enrollmentDraftId") || "";
-
-        if (!draftId) {
-            draftId =
-                typeof crypto !== "undefined" && "randomUUID" in crypto
-                    ? crypto.randomUUID()
-                    : `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-            localStorage.setItem("enrollmentDraftId", draftId);
-        }
+        const draftId = localStorage.getItem("enrollmentDraftId") || "";
 
         let email = (localStorage.getItem("studentEmail") || "").trim();
         let contactNumber = (localStorage.getItem("studentContactNumber") || "").trim();

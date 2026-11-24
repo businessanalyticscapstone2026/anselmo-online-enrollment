@@ -195,6 +195,13 @@ export async function GET(request: Request) {
       }
     );
 
+    const notificationsOnly =
+      new URL(request.url).searchParams.get("view") === "notifications";
+
+    if (notificationsOnly) {
+      return NextResponse.json({ rejectedStudents });
+    }
+
     const users = (profiles || [])
       .filter((profile) => {
         const role = String(profile.role || "student").trim().toLowerCase();

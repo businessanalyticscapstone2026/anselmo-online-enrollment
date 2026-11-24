@@ -336,7 +336,11 @@ export default function AccountPage() {
                     onClick={() => triggerSendEmail(email)}
                     className="cursor-pointer text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline disabled:opacity-50"
                   >
-                    {isSending ? "Sending..." : "↻ Resend Email Credentials"}
+                    {isSending
+                      ? "Sending..."
+                      : applicationId
+                        ? "↻ Resend Email Credentials"
+                        : "Send My Credentials"}
                   </button>
                 </div>
               </div>
