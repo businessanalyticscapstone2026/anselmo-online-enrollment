@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   ENROLLMENT_STATUS_OPTIONS,
   getEnrollmentStatusLabel,
+  isFinalEnrollmentStatus,
   normalizeEnrollmentStatus,
 } from "@/lib/enrollmentStatus";
 import { supabase } from "@/lib/supabaseClient";
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 
 type AppRecord = Record<string, unknown>;
+type StatusFilter = "pending" | "enrolled" | "denied";
 
 const firstText = (values: unknown[]) => {
   const value = values.find(
@@ -139,7 +141,7 @@ const getCluster = (record: AppRecord) => {
 };
 
 const isStatusFinalized = (record: AppRecord) =>
-  normalizeEnrollmentStatus(record.status) !== "pending";
+  isFinalEnrollmentStatus(record.status);
 
 const formatCluster = (value: string) => {
   if (!value) return "Not provided";
@@ -227,9 +229,7 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"pending" | "enrolled">(
-    "pending"
-  );
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [selected, setSelected] = useState<AppRecord | null>(null);
   const [previewFile, setPreviewFile] = useState<{ label: string; url: string } | null>(null);
   const [statusTarget, setStatusTarget] = useState<AppRecord | null>(null);
@@ -242,7 +242,7 @@ export default function ApplicationsPage() {
   const load = useCallback(
     async (
       showLoading = true,
-      filter: "pending" | "enrolled" = statusFilter
+      filter: StatusFilter = statusFilter
     ) => {
       if (showLoading) {
         setLoading(true);
@@ -263,10 +263,8 @@ export default function ApplicationsPage() {
             (data ?? []) as AppRecord[]
           );
           setRecords(
-            visibleRecords.filter((record) =>
-              filter === "enrolled"
-                ? normalizeEnrollmentStatus(record.status) === "enrolled"
-                : !isStatusFinalized(record)
+            visibleRecords.filter(
+              (record) => normalizeEnrollmentStatus(record.status) === filter
             )
           );
         }
@@ -317,8 +315,13 @@ export default function ApplicationsPage() {
     const targetRemark = statusRemarks.trim();
 
     if (targetStatus === "pending") {
+      setStatusError("Select Enrolled or Denied to update the enrollment status.");
+      return;
+    }
+
+    if (targetStatus === "rejected") {
       setStatusError(
-        "Select Enrolled or Rejected to finalize the enrollment status."
+        "Rejected is no longer available. Use Denied so the student can resubmit missing or unclear requirements."
       );
       return;
     }
@@ -398,10 +401,8 @@ export default function ApplicationsPage() {
         registrar_remarks: savedRemark,
       };
 
-      // The status is now finalized, so the record leaves the pending list.
-      setRecords((prev) =>
-        prev.filter((record) => String(record.id) !== id)
-      );
+      // Reload the active filter so the record moves to its new status list.
+      void load(false, statusFilter);
       setSelected((prev) =>
         prev && String(prev.id) === id ? { ...prev, ...updatedFields } : prev
       );
@@ -770,13 +771,14 @@ export default function ApplicationsPage() {
           <select
             value={statusFilter}
             onChange={(e) =>
-              setStatusFilter(e.target.value as "pending" | "enrolled")
+              setStatusFilter(e.target.value as StatusFilter)
             }
             className="bg-transparent text-xs font-semibold text-emerald-700 outline-none"
             aria-label="Filter applications by status"
           >
             <option value="pending">Pending</option>
             <option value="enrolled">Enrolled</option>
+            <option value="denied">Denied</option>
           </select>
         </label>
       </div>
@@ -787,7 +789,9 @@ export default function ApplicationsPage() {
           <h2 className="font-semibold">
             {statusFilter === "enrolled"
               ? "Enrolled Applications"
-              : "Pending Applications"}
+              : statusFilter === "denied"
+                ? "Denied Applications"
+                : "Pending Applications"}
           </h2>
           <span className="text-xs text-emerald-700 font-mono">
             {filtered.length} record{filtered.length === 1 ? "" : "s"}
@@ -895,7 +899,9 @@ export default function ApplicationsPage() {
                   >
                     {statusFilter === "enrolled"
                       ? "No enrolled applications found."
-                      : "No pending applications found."}
+                      : statusFilter === "denied"
+                        ? "No denied applications found."
+                        : "No pending applications found."}
                   </td>
                 </tr>
               )}
@@ -1204,19 +1210,20 @@ export default function ApplicationsPage() {
                   ))}
                 </select>
                 <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-emerald-700">
-                  Choose Enrolled or Rejected. Saving is final: the status can
-                  only be updated once and cannot be undone.
+                  Choose Enrolled or Denied. Denied means requirements are
+                  missing or unclear; the student can resubmit them for another
+                  review. Enrolled is final and cannot be undone.
                 </span>
               </label>
 
               <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-800">
-                Registrar remarks / rejection reason
+                Registrar remarks / denial reason
                 <textarea
                   value={statusRemarks}
                   onChange={(e) => setStatusRemarks(e.target.value)}
                   maxLength={1000}
                   rows={4}
-                  placeholder="Optional remarks or rejection reason (e.g. Incomplete Form 138)"
+                  placeholder="Reason for denial (e.g. Missing Form 138, unclear report card)"
                   disabled={statusSaving || statusFinalized}
                   className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none placeholder:text-emerald-700/60 focus:border-emerald-300 disabled:opacity-60"
                 />
@@ -1226,9 +1233,8 @@ export default function ApplicationsPage() {
                 <p className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                   <Lock size={16} className="shrink-0" />
                   <span>
-                    This enrollment status has been finalized. Status updates
-                    are allowed only once per student and cannot be undone or
-                    changed.
+                    This enrollment status has been finalized. Enrolled is the
+                    final decision and cannot be undone or changed.
                   </span>
                 </p>
               )}

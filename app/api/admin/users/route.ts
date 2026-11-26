@@ -3,11 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import { verifyAdminRequest } from "@/lib/auth/adminAuth";
 import { formatAccountName, normalizeEmail } from "@/lib/accountNames";
 import { hasReceivedCredentials } from "@/lib/applicationVisibility";
-import { normalizeEnrollmentStatus } from "@/lib/enrollmentStatus";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const adminAuth = await verifyAdminRequest(request);
 
@@ -59,7 +58,6 @@ export async function GET(request: Request) {
       last_name: string | null;
       email?: string | null;
       status?: unknown;
-      registrar_remarks?: string | null;
       requirements_submitted?: unknown;
       student_details?: unknown;
       submitted_at?: string | null;
@@ -73,7 +71,7 @@ export async function GET(request: Request) {
     const extendedApplications = await supabaseAdmin
       .from("student_applications")
       .select(
-        "id, user_id, first_name, middle_name, last_name, email, status, registrar_remarks, requirements_submitted, student_details, submitted_at, updated_at"
+        "id, user_id, first_name, middle_name, last_name, email, status, requirements_submitted, student_details, submitted_at, updated_at"
       );
 
     if (!extendedApplications.error) {
@@ -85,7 +83,7 @@ export async function GET(request: Request) {
       const fallbackApplications = await supabaseAdmin
         .from("student_applications")
         .select(
-          "id, user_id, first_name, middle_name, last_name, email, status, registrar_remarks, student_details, submitted_at, updated_at"
+          "id, user_id, first_name, middle_name, last_name, email, status, student_details, submitted_at, updated_at"
         );
 
       if (!fallbackApplications.error) {
@@ -112,7 +110,6 @@ export async function GET(request: Request) {
     }
 
     const applicationsByUserId = new Map<string, ApplicationSummary>();
-    const latestApplicationByUserId = new Map<string, ApplicationSummary>();
     const visibleApplicationUserIds = new Set<string>();
 
     for (const application of applications) {
@@ -124,82 +121,9 @@ export async function GET(request: Request) {
         applicationsByUserId.set(userId, application);
       }
 
-      const currentStamp =
-        application.updated_at || application.submitted_at || "";
-      const existing = latestApplicationByUserId.get(userId);
-      const existingStamp = existing?.updated_at || existing?.submitted_at || "";
-
-      if (!existing || currentStamp >= existingStamp) {
-        latestApplicationByUserId.set(userId, application);
-      }
-
       if (hasReceivedCredentials(application)) {
         visibleApplicationUserIds.add(userId);
       }
-    }
-
-    const profilesById = new Map(
-      (profiles || []).map((profile) => [String(profile.id), profile])
-    );
-    const rejectedByUserId = new Map<string, ApplicationSummary>();
-
-    for (const application of latestApplicationByUserId.values()) {
-      const userId = application.user_id ? String(application.user_id) : "";
-
-      if (!userId) continue;
-      if (normalizeEnrollmentStatus(application.status) !== "rejected") continue;
-      if (!hasReceivedCredentials(application)) continue;
-
-      const profile = profilesById.get(userId);
-      if (
-        !profile ||
-        String(profile.role || "student").trim().toLowerCase() !== "student"
-      ) {
-        continue;
-      }
-
-      rejectedByUserId.set(userId, application);
-    }
-
-    const rejectedStudents = Array.from(rejectedByUserId.values()).map(
-      (application) => {
-        const userId = String(application.user_id);
-        const profile = profilesById.get(userId);
-        const email =
-          normalizeEmail(application.email) ||
-          normalizeEmail(profile?.email) ||
-          "No email";
-        const fullName =
-          formatAccountName(
-            {
-              fullName: profile?.full_name,
-              firstName: application.first_name,
-              middleName: application.middle_name,
-              lastName: application.last_name,
-            },
-            email
-          ) || "Unnamed Student";
-
-        return {
-          userId,
-          applicationId: application.id ? String(application.id) : null,
-          fullName,
-          email,
-          remarks:
-            typeof application.registrar_remarks === "string"
-              ? application.registrar_remarks
-              : "",
-          rejectedAt:
-            application.updated_at || application.submitted_at || null,
-        };
-      }
-    );
-
-    const notificationsOnly =
-      new URL(request.url).searchParams.get("view") === "notifications";
-
-    if (notificationsOnly) {
-      return NextResponse.json({ rejectedStudents });
     }
 
     const users = (profiles || [])
@@ -236,7 +160,7 @@ export async function GET(request: Request) {
         };
       });
 
-    return NextResponse.json({ users, rejectedStudents });
+    return NextResponse.json({ users });
   } catch (err) {
     console.error("Error in GET /api/admin/users:", err);
     return NextResponse.json(

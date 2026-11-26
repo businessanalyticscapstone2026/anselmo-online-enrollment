@@ -8,6 +8,7 @@ import { hasReceivedCredentials } from "@/lib/applicationVisibility";
 import { syncStudentProfile } from "@/lib/studentProfiles";
 import {
   getEnrollmentStatusLabel,
+  isFinalEnrollmentStatus,
   normalizeEnrollmentStatus,
 } from "@/lib/enrollmentStatus";
 import { getMailConfig } from "@/lib/mailer";
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "This account is not authorized to update enrollment statuses.",
+          error: "This account is not authorized to update enrollment status.",
         },
         { status: 403 }
       );
@@ -156,18 +157,19 @@ export async function POST(request: Request) {
     const previousStatus = normalizeEnrollmentStatus(applicationRecord.status);
     const now = new Date().toISOString();
 
-    // A student's enrollment status may only be updated once. Any status other
-    // than "pending" means a staff member has already finalized the record, so
-    // later changes (including reversing a decision) are rejected.
+    // Only final decisions are locked. "denied" means the student still needs
+    // to submit missing/unclear requirements, so staff can review it again
+    // after the student resubmits.
     const statusLocked =
-      applicationRecord.status_locked === true || previousStatus !== "pending";
+      applicationRecord.status_locked === true ||
+      isFinalEnrollmentStatus(previousStatus);
 
     if (statusLocked) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "This student's enrollment status has already been finalized. Only one status update is allowed, and it can no longer be undone or changed.",
+            "This student's enrollment status has already been finalized and can no longer be changed.",
           data: {
             applicationId,
             status: previousStatus,
@@ -184,7 +186,18 @@ export async function POST(request: Request) {
         {
           success: false,
           error:
-            "Select Enrolled or Rejected to finalize the enrollment status. Pending is the default status and cannot be saved as an update.",
+            "Select Enrolled or Denied. Pending is the default status and cannot be saved as an update.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (targetStatus === "rejected") {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Rejected is no longer available. Use Denied when requirements are missing or unclear so the student can resubmit them.",
         },
         { status: 400 }
       );

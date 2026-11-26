@@ -55,20 +55,8 @@ type AddStaffApiResponse = {
   };
 };
 
-type RejectedStudent = {
-  userId: string;
-  applicationId: string | null;
-  fullName: string;
-  email: string;
-  remarks: string;
-  rejectedAt: string | null;
-};
-
 export default function ManageUsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
-  const [rejectedStudents, setRejectedStudents] = useState<RejectedStudent[]>(
-    []
-  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -119,7 +107,6 @@ export default function ManageUsersPage() {
       }
 
       setUsers(data.users || []);
-      setRejectedStudents(data.rejectedStudents || []);
     } catch (err) {
       console.error("Error fetching users:", err);
       setError(err instanceof Error ? err.message : "Unable to retrieve users.");
@@ -133,23 +120,6 @@ export default function ManageUsersPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchUsers();
-  }, []);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel("admin-rejected-students")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "student_applications" },
-        () => {
-          void fetchUsers({ silent: true });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
   }, []);
 
   // Filtered users: dynamic search by full name + role filter
@@ -222,9 +192,6 @@ export default function ManageUsersPage() {
 
       // Remove user from local state
       setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
-      setRejectedStudents((prev) =>
-        prev.filter((student) => student.userId !== userToDelete.id)
-      );
       setUserToDelete(null);
     } catch (err) {
       console.error("Error deleting user:", err);
@@ -476,72 +443,6 @@ export default function ManageUsersPage() {
             ✕
           </button>
         </div>
-      )}
-
-      {rejectedStudents.length > 0 && (
-        <section
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm sm:p-5"
-        >
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-700">
-              <ShieldAlert size={18} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-red-800">
-                {rejectedStudents.length === 1
-                  ? "A student was rejected by staff"
-                  : `${rejectedStudents.length} students were rejected by staff`}
-              </p>
-              <p className="mt-1 text-xs text-red-700">
-                Review the rejection and remove the affected account
-                {rejectedStudents.length === 1 ? "" : "s"} from the portal.
-              </p>
-
-              <ul className="mt-3 space-y-2">
-                {rejectedStudents.map((student) => (
-                  <li
-                    key={student.userId}
-                    className="flex flex-col gap-3 rounded-lg border border-red-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-bold text-emerald-950">
-                        {student.fullName}
-                      </p>
-                      <p className="truncate text-[11px] text-emerald-800">
-                        {student.email}
-                      </p>
-                      {student.remarks && (
-                        <p className="mt-1 break-words text-[11px] text-red-700">
-                          Reason: {student.remarks}
-                        </p>
-                      )}
-                      <p className="mt-1 text-[10px] font-medium text-emerald-700">
-                        Rejected {formatPhilippineDateTime(student.rejectedAt)}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setUserToDelete({
-                          id: student.userId,
-                          fullName: student.fullName,
-                          email: student.email,
-                          role: "student",
-                        })
-                      }
-                      disabled={deleting}
-                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50"
-                    >
-                      <Trash2 size={13} />
-                      Remove account
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
       )}
 
       {/* Metrics Cards */}

@@ -27,6 +27,7 @@ type Application = {
 const statusColors: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
   enrolled: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  denied: "bg-orange-50 text-orange-700 border-orange-200",
   rejected: "bg-red-50 text-red-700 border-red-200",
 };
 
@@ -376,7 +377,7 @@ export default function StaffDashboardPage() {
   const total = applications.length;
   const pending = count("pending");
   const enrolled = count("enrolled");
-  const rejected = count("rejected");
+  const denied = count("denied");
 
   // Applications per cluster.
   const clusterCounts = applications.reduce<Record<string, number>>(
@@ -491,11 +492,11 @@ export default function StaffDashboardPage() {
       note: "Officially registered",
     },
     {
-      label: "Rejected Applications",
-      value: rejected,
+      label: "Denied Applications",
+      value: denied,
       icon: XCircle,
-      tone: "text-red-700",
-      note: "Not accepted for enrollment",
+      tone: "text-orange-700",
+      note: "Missing or unclear requirements",
     },
   ];
 
@@ -627,9 +628,9 @@ export default function StaffDashboardPage() {
                   color: "bg-emerald-500",
                 },
                 {
-                  label: "Rejected",
-                  value: rejected,
-                  color: "bg-emerald-800",
+                  label: "Denied",
+                  value: denied,
+                  color: "bg-orange-400",
                 },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-3">
@@ -655,10 +656,10 @@ export default function StaffDashboardPage() {
               <p className="mt-2 text-sm leading-6 text-emerald-900">
                 {total === 0
                   ? "No applications recorded yet. Promote the enrollment schedule and monitor incoming submissions to plan staffing and sectioning early."
-                  : pending >= Math.max(enrolled, rejected)
+                  : pending >= Math.max(enrolled, denied)
                     ? `Prioritize review: ${pending} pending application${pending === 1 ? "" : "s"} (${((pending / Math.max(total, 1)) * 100).toFixed(1)}%) need action. Assign reviewers and set daily targets to reduce backlog and speed up enrollment decisions.`
-                    : rejected > enrolled
-                      ? `Review quality signals: ${rejected} application${rejected === 1 ? "" : "s"} rejected (${((rejected / Math.max(total, 1)) * 100).toFixed(1)}%). Audit common rejection reasons and improve applicant guidance/requirements communication.`
+                    : denied > enrolled
+                      ? `Review quality signals: ${denied} application${denied === 1 ? "" : "s"} denied (${((denied / Math.max(total, 1)) * 100).toFixed(1)}%) because requirements were missing or unclear. Improve applicant guidance and requirements communication so students can resubmit correctly.`
                       : `Enrollment flow is healthy with ${enrolled} enrolled (${((enrolled / Math.max(total, 1)) * 100).toFixed(1)}%). Continue timely processing of remaining ${pending} pending item${pending === 1 ? "" : "s"} to sustain completion rates.`}
               </p>
             </div>

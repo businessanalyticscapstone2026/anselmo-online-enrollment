@@ -89,8 +89,8 @@ function getStudentName(row: Row): string {
 function getRowGender(row: Row): Gender {
   const details =
     row.student_details &&
-    typeof row.student_details === "object" &&
-    !Array.isArray(row.student_details)
+      typeof row.student_details === "object" &&
+      !Array.isArray(row.student_details)
       ? (row.student_details as Row)
       : {};
 
@@ -126,8 +126,8 @@ function normalizeTrack(value: unknown): "Academic" | "Tech Professional" | "" {
 function getRowTrack(row: Row): "Academic" | "Tech Professional" | "" {
   const details =
     row.student_details &&
-    typeof row.student_details === "object" &&
-    !Array.isArray(row.student_details)
+      typeof row.student_details === "object" &&
+      !Array.isArray(row.student_details)
       ? (row.student_details as Row)
       : {};
   const candidates = [
@@ -154,8 +154,8 @@ function getRowTrack(row: Row): "Academic" | "Tech Professional" | "" {
 function getSelectedTrack(row: Row): string {
   const details =
     row.student_details &&
-    typeof row.student_details === "object" &&
-    !Array.isArray(row.student_details)
+      typeof row.student_details === "object" &&
+      !Array.isArray(row.student_details)
       ? (row.student_details as Row)
       : {};
 
@@ -270,8 +270,8 @@ function csvCell(value: unknown) {
     value == null
       ? ""
       : typeof value === "object"
-      ? JSON.stringify(value)
-      : String(value);
+        ? JSON.stringify(value)
+        : String(value);
 
   // Prefix date-like values with a tab so Excel keeps them as text instead of
   // auto-formatting them as dates (which renders as "####" in narrow columns).
@@ -597,36 +597,36 @@ export default function ReportsPage() {
       clusters.length === 0
         ? "No cluster values found for the selected filters. Ensure cluster/track fields are captured to guide section and resource planning."
         : (() => {
-            const [topName, topValue] = clusters[0];
-            return `Highest demand: ${topName} with ${topValue} applicant${topValue === 1 ? "" : "s"} (${pct(topValue, total).toFixed(1)}% of total). Plan sections, teachers, and rooms proportionally and monitor lower-demand clusters for consolidation or targeted orientation.`;
-          })();
+          const [topName, topValue] = clusters[0];
+          return `Highest demand: ${topName} with ${topValue} applicant${topValue === 1 ? "" : "s"} (${pct(topValue, total).toFixed(1)}% of total). Plan sections, teachers, and rooms proportionally and monitor lower-demand clusters for consolidation or targeted orientation.`;
+        })();
 
     const genderReport =
       genderTotal === 0
         ? "No gender values found for the selected filters. Capture sex/gender data to support balanced planning and support services."
         : (() => {
-            const gap = Math.abs(malePct - pct(genderCounts.Female, genderTotal));
-            if (gap <= 10) return `Gender distribution is relatively balanced (gap ${gap.toFixed(1)}%). Maintain equitable support services, facilities planning, and class assignments.`;
-            const dominant = [
-              { label: "Male", value: genderCounts.Male, pct: malePct },
-              { label: "Female", value: genderCounts.Female, pct: pct(genderCounts.Female, genderTotal) },
-              { label: "Unspecified", value: genderCounts.Unspecified, pct: pct(genderCounts.Unspecified, genderTotal) },
-            ].sort((a, b) => b.value - a.value)[0];
-            return `${dominant.label} applicants are higher at ${dominant.pct.toFixed(1)}%. Ensure balanced class composition, inclusive activities, and targeted outreach where participation is lower.`;
-          })();
+          const gap = Math.abs(malePct - pct(genderCounts.Female, genderTotal));
+          if (gap <= 10) return `Gender distribution is relatively balanced (gap ${gap.toFixed(1)}%). Maintain equitable support services, facilities planning, and class assignments.`;
+          const dominant = [
+            { label: "Male", value: genderCounts.Male, pct: malePct },
+            { label: "Female", value: genderCounts.Female, pct: pct(genderCounts.Female, genderTotal) },
+            { label: "Unspecified", value: genderCounts.Unspecified, pct: pct(genderCounts.Unspecified, genderTotal) },
+          ].sort((a, b) => b.value - a.value)[0];
+          return `${dominant.label} applicants are higher at ${dominant.pct.toFixed(1)}%. Ensure balanced class composition, inclusive activities, and targeted outreach where participation is lower.`;
+        })();
 
     const trackReport =
       trackTotal === 0
         ? "No recognized track values found for the selected filters. Capture Academic/Tech Professional track data for capacity planning."
         : (() => {
-            const techPct = pct(trackCounts["Tech Professional"], trackTotal);
-            const gap = Math.abs(acadPct - techPct);
-            if (gap <= 10) return `Track demand is balanced (gap ${gap.toFixed(1)}%). Allocate sections and resources fairly across both tracks and monitor shifts.`;
-            const preferred = trackCounts.Academic >= trackCounts["Tech Professional"]
-              ? { label: "Academic", value: trackCounts.Academic, pct: acadPct }
-              : { label: "Tech Professional", value: trackCounts["Tech Professional"], pct: techPct };
-            return `${preferred.label} track has higher demand (${preferred.value}, ${preferred.pct.toFixed(1)}%). Prepare additional sections/resources for this track while maintaining capacity and guidance for the other.`;
-          })();
+          const techPct = pct(trackCounts["Tech Professional"], trackTotal);
+          const gap = Math.abs(acadPct - techPct);
+          if (gap <= 10) return `Track demand is balanced (gap ${gap.toFixed(1)}%). Allocate sections and resources fairly across both tracks and monitor shifts.`;
+          const preferred = trackCounts.Academic >= trackCounts["Tech Professional"]
+            ? { label: "Academic", value: trackCounts.Academic, pct: acadPct }
+            : { label: "Tech Professional", value: trackCounts["Tech Professional"], pct: techPct };
+          return `${preferred.label} track has higher demand (${preferred.value}, ${preferred.pct.toFixed(1)}%). Prepare additional sections/resources for this track while maintaining capacity and guidance for the other.`;
+        })();
 
     return {
       total,
@@ -649,9 +649,9 @@ export default function ReportsPage() {
       cluster === "all"
         ? ""
         : `-${cluster
-            .replace(/[^a-z0-9]+/gi, "-")
-            .replace(/^-|-$/g, "")
-            .toLowerCase()}`;
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase()}`;
     const filterLabel =
       status === "all" && track === "all" && cluster === "all"
         ? "all-records"
@@ -821,9 +821,9 @@ export default function ReportsPage() {
       cluster === "all"
         ? ""
         : `-${cluster
-            .replace(/[^a-z0-9]+/gi, "-")
-            .replace(/^-|-$/g, "")
-            .toLowerCase()}`;
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase()}`;
     const filterLabel =
       status === "all" && track === "all" && cluster === "all"
         ? "all-records"
@@ -1059,37 +1059,34 @@ export default function ReportsPage() {
         </p>
       </div>
 
-        {/* Report View Tabs */}
+      {/* Report View Tabs */}
       <div className="inline-flex flex-wrap rounded-lg border border-emerald-200 bg-white p-1 text-xs print:hidden">
         <button
           onClick={() => setReportView("summary")}
-          className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 font-semibold transition ${
-            reportView === "summary"
+          className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 font-semibold transition ${reportView === "summary"
               ? "bg-yellow-300 text-emerald-950"
               : "text-emerald-900 hover:text-emerald-950"
-          }`}
+            }`}
         >
           <FileSpreadsheet size={14} />
           Enrollment Summary
         </button>
         <button
           onClick={() => setReportView("gender")}
-          className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 font-semibold transition ${
-            reportView === "gender"
+          className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 font-semibold transition ${reportView === "gender"
               ? "bg-yellow-300 text-emerald-950"
               : "text-emerald-900 hover:text-emerald-950"
-          }`}
+            }`}
         >
           <Users size={14} />
           Gender by Section
         </button>
         <button
           onClick={() => setReportView("analytics")}
-          className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 font-semibold transition ${
-            reportView === "analytics"
+          className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 font-semibold transition ${reportView === "analytics"
               ? "bg-yellow-300 text-emerald-950"
               : "text-emerald-900 hover:text-emerald-950"
-          }`}
+            }`}
         >
           <BarChart3 size={14} />
           Dashboard Analytics
@@ -1106,9 +1103,8 @@ export default function ReportsPage() {
       {/* Summary KPI Cards */}
       {reportView === "summary" && (
         <div
-          className={`grid gap-4 sm:grid-cols-4 print:grid-cols-4 ${
-            printSectionId ? "print:hidden" : ""
-          }`}
+          className={`grid gap-4 sm:grid-cols-4 print:grid-cols-4 ${printSectionId ? "print:hidden" : ""
+            }`}
         >
           {[
             {
@@ -1150,9 +1146,8 @@ export default function ReportsPage() {
       )}
       {reportView === "gender" && (
         <div
-          className={`grid gap-4 sm:grid-cols-4 print:grid-cols-4 ${
-            printSectionId ? "print:hidden" : ""
-          }`}
+          className={`grid gap-4 sm:grid-cols-4 print:grid-cols-4 ${printSectionId ? "print:hidden" : ""
+            }`}
         >
           {[
             { label: "Sections Assigned", value: genderTotals.sections },
@@ -1174,9 +1169,8 @@ export default function ReportsPage() {
       )}
       {reportView === "analytics" && (
         <div
-          className={`mx-auto grid w-full max-w-5xl gap-4 text-center sm:grid-cols-4 print:grid-cols-4 ${
-            printSectionId ? "print:hidden" : ""
-          }`}
+          className={`mx-auto grid w-full max-w-5xl gap-4 text-center sm:grid-cols-4 print:grid-cols-4 ${printSectionId ? "print:hidden" : ""
+            }`}
         >
           {[
             { label: "Records in report", value: analytics.total },
@@ -1205,13 +1199,13 @@ export default function ReportsPage() {
           </div>
           <div>
             <h2 className="font-bold">Report Filters</h2>
-              <p className="mt-1 text-xs text-emerald-800">
-                {reportView === "gender"
-                  ? "Gender distribution is grouped by each student's assigned section. Use the filters to narrow the report."
-                  : reportView === "analytics"
-                    ? "Analytics are computed from current filters. Export includes charts summary and prescriptive insights."
-                    : "Enrollment summary includes Enrolled or Pending students. Choose a status, track category, and cluster before exporting."}
-              </p>
+            <p className="mt-1 text-xs text-emerald-800">
+              {reportView === "gender"
+                ? "Gender distribution is grouped by each student's assigned section. Use the filters to narrow the report."
+                : reportView === "analytics"
+                  ? "Analytics are computed from current filters. Export includes charts summary and prescriptive insights."
+                  : "Enrollment summary includes Enrolled or Pending students. Choose a status, track category, and cluster before exporting."}
+            </p>
           </div>
         </div>
 
@@ -1238,7 +1232,7 @@ export default function ReportsPage() {
                 onChange={(e) => setStatus(e.target.value)}
                 className="mt-2 block w-full rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm text-emerald-700 outline-none focus:border-emerald-200"
               >
-                <option value="all">All statuses</option>
+                <option value="all">All status</option>
                 <option value="pending">Pending</option>
                 <option value="enrolled">Enrolled</option>
                 <option value="rejected">Rejected</option>
@@ -1536,9 +1530,8 @@ export default function ReportsPage() {
       ) : (
         <section className="space-y-4">
           <div
-            className={`rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:border-gray-300 print:bg-white print:text-emerald-950 ${
-              printSectionId ? "print:hidden" : ""
-            }`}
+            className={`rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:border-gray-300 print:bg-white print:text-emerald-950 ${printSectionId ? "print:hidden" : ""
+              }`}
           >
             <div className="flex items-center gap-3">
               <Users size={18} className="text-emerald-700 print:text-emerald-950" />
@@ -1578,11 +1571,10 @@ export default function ReportsPage() {
               return (
                 <div
                   key={group.id}
-                  className={`overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50 break-inside-avoid print:break-inside-avoid print:border-gray-300 print:bg-white print:text-emerald-950 ${
-                    printSectionId && printSectionId !== group.id
+                  className={`overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50 break-inside-avoid print:break-inside-avoid print:border-gray-300 print:bg-white print:text-emerald-950 ${printSectionId && printSectionId !== group.id
                       ? "print:hidden"
                       : ""
-                  }`}
+                    }`}
                 >
                   <div className="flex flex-col gap-3 border-b border-emerald-200 px-5 py-4 print:border-gray-300 sm:flex-row sm:items-center sm:justify-between">
                     <div>

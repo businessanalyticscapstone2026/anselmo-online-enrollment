@@ -21,6 +21,7 @@ import {
   Phone,
   RefreshCw,
   School,
+  Upload,
   UserRound,
   Users,
   XCircle,
@@ -49,12 +50,14 @@ const statusSteps = ["pending", "enrolled"];
 const statusLabels: Record<string, string> = {
   pending: "Pending Review",
   enrolled: "Enrolled",
+  denied: "Denied - Action Required",
   rejected: "Rejected",
 };
 
 const statusStyles: Record<string, string> = {
   pending: "border-amber-200 bg-amber-50 text-amber-700",
   enrolled: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  denied: "border-orange-200 bg-orange-50 text-orange-700",
   rejected: "border-red-200 bg-red-50 text-red-700",
 };
 
@@ -652,6 +655,8 @@ export default function StudentDashboardView({
                     >
                       {status === "rejected" ? (
                         <XCircle size={14} />
+                      ) : status === "denied" ? (
+                        <AlertCircle size={14} />
                       ) : status === "enrolled" ? (
                         <BadgeCheck size={14} />
                       ) : (
@@ -700,7 +705,28 @@ export default function StudentDashboardView({
                 </div>
               </div>
 
-              {status === "rejected" ? (
+              {status === "denied" ? (
+                <div className="flex flex-col gap-4 bg-orange-400/10 p-5 text-sm text-orange-800 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={20} className="mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-bold">Requirements need attention</p>
+                      <p className="mt-1 text-orange-800/80">
+                        {remarks ||
+                          "Some requirements are missing or unclear. Please resubmit the needed documents for the registrar to review your application again."}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/student/requirements")}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-orange-700"
+                  >
+                    <Upload size={15} />
+                    Resubmit requirements
+                  </button>
+                </div>
+              ) : status === "rejected" ? (
                 <div className="flex items-start gap-3 bg-red-400/10 p-5 text-sm text-red-700 sm:p-6">
                   <XCircle size={20} className="mt-0.5 shrink-0" />
                   <div>
@@ -747,7 +773,7 @@ export default function StudentDashboardView({
                 </div>
               )}
 
-              {remarks && status !== "rejected" && (
+              {remarks && status !== "rejected" && status !== "denied" && (
                 <div className="border-t border-emerald-200 px-5 py-4 text-sm text-emerald-700 sm:px-6">
                   <span className="font-semibold">Registrar remarks: </span>
                   {remarks}

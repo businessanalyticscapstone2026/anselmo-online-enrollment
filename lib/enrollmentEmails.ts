@@ -36,6 +36,13 @@ const STATUS_THEME: Record<
     intro:
       "Congratulations! Your enrollment application has been approved and you are now officially enrolled at Anselmo A. Sandoval Memorial National High School.",
   },
+  denied: {
+    color: "#7c2d12",
+    background: "#fff7ed",
+    border: "#c2410c",
+    intro:
+      "After reviewing your enrollment requirements, some documents are missing or unclear. Sign in to your student portal and resubmit the required documents so the registrar can review your application again.",
+  },
   rejected: {
     color: "#7f1d1d",
     background: "#fef2f2",
