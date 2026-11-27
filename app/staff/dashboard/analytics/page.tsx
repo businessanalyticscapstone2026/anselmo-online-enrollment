@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { filterVisibleApplications } from "@/lib/applicationVisibility";
+import type { EnrollmentStatus } from "@/lib/enrollmentStatus";
 import {
   evaluateEnrollmentAvailability,
   type EnrollmentSettings,
@@ -241,7 +242,12 @@ export default function AnalyticsPage() {
   );
 
   const statusCounts = useMemo(() => {
-    const counts = { pending: 0, enrolled: 0, rejected: 0 };
+    const counts: Record<EnrollmentStatus, number> = {
+      pending: 0,
+      enrolled: 0,
+      denied: 0,
+      rejected: 0,
+    };
 
     for (const record of filtered) {
       counts[getStatus(record)] += 1;
@@ -556,6 +562,7 @@ export default function AnalyticsPage() {
   const statusData = [
     { label: "Pending", value: statusCounts.pending, color: "#f59e0b" },
     { label: "Enrolled", value: statusCounts.enrolled, color: "#176b4d" },
+    { label: "Denied", value: statusCounts.denied, color: "#c2410c" },
   ];
 
   const trackData = [
@@ -611,7 +618,7 @@ export default function AnalyticsPage() {
       ["Total applications", total],
       ["Enrolled", statusCounts.enrolled],
       ["Pending", statusCounts.pending],
-      ["Rejected (excluded from analytics totals)", statusCounts.rejected],
+      ["Denied", statusCounts.denied],
       ["Enrollment rate (%)", enrollmentRate],
       ["New this week", weekCount],
       ["Submitted today", todayCount],

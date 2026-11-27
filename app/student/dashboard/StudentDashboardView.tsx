@@ -540,7 +540,7 @@ export default function StudentDashboardView({
                 AASMNHS
               </p>
               <p className="truncate text-[10px] text-emerald-700">
-                Student Enrollment Portal
+                Online Enrollment System
               </p>
             </div>
           </div>
@@ -581,10 +581,10 @@ export default function StudentDashboardView({
             <span className="hidden items-center gap-1.5 text-[11px] text-emerald-800 sm:inline-flex">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${realtimeStatus === "live"
-                    ? "bg-emerald-400"
-                    : realtimeStatus === "error"
-                      ? "bg-red-400"
-                      : "bg-amber-300"
+                  ? "bg-emerald-400"
+                  : realtimeStatus === "error"
+                    ? "bg-red-400"
+                    : "bg-amber-300"
                   }`}
               />
               {realtimeStatus === "live"
@@ -747,15 +747,15 @@ export default function StudentDashboardView({
                       <div
                         key={step}
                         className={`rounded-xl border p-3 ${complete
-                            ? "border-emerald-200 bg-amber-50"
-                            : "border-emerald-200 bg-white/2"
+                          ? "border-emerald-200 bg-amber-50"
+                          : "border-emerald-200 bg-white/2"
                           }`}
                       >
                         <div className="flex items-center gap-2">
                           <span
                             className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${complete
-                                ? "bg-yellow-300 text-emerald-950"
-                                : "bg-emerald-50 text-emerald-800"
+                              ? "bg-yellow-300 text-emerald-950"
+                              : "bg-emerald-50 text-emerald-800"
                               }`}
                           >
                             {complete ? <Check size={13} /> : index + 1}
@@ -789,11 +789,6 @@ export default function StudentDashboardView({
                 </h2>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <InfoItem
-                  icon={BadgeCheck}
-                  label="Status"
-                  value={profileStatusLabel}
-                />
                 <InfoItem
                   icon={IdCard}
                   label="Full Name"

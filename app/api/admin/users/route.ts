@@ -6,7 +6,7 @@ import { hasReceivedCredentials } from "@/lib/applicationVisibility";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const adminAuth = await verifyAdminRequest(request);
 

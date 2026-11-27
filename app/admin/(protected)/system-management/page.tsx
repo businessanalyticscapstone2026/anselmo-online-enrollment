@@ -243,9 +243,9 @@ export default function SystemManagementPage() {
       evaluateEnrollmentAvailability(
         startDate && endDate
           ? {
-              enrollment_start_date: startDate,
-              enrollment_end_date: endDate,
-            }
+            enrollment_start_date: startDate,
+            enrollment_end_date: endDate,
+          }
           : null,
         new Date(nowTick)
       ),
@@ -387,25 +387,23 @@ export default function SystemManagementPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                isEnrollmentActive
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${isEnrollmentActive
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : "border-red-200 bg-red-50 text-red-700"
-              }`}
+                }`}
             >
               <Clock size={20} />
             </div>
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">
-                Current Enrollment Status (Asia/Manila)
+                Current Enrollment Status
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                    isEnrollmentActive
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${isEnrollmentActive
                       ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
                       : "bg-red-50 text-red-700 ring-1 ring-red-200"
-                  }`}
+                    }`}
                 >
                   ● {statusLabel}
                 </span>

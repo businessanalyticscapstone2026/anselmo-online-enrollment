@@ -553,7 +553,7 @@ export default function ReportsPage() {
 
   const analytics = useMemo(() => {
     const total = filtered.length;
-    const byStatus = { pending: 0, enrolled: 0, rejected: 0 };
+    const byStatus = { pending: 0, enrolled: 0, denied: 0 };
     const clusterCounts: Record<string, number> = {};
     const genderCounts = { Male: 0, Female: 0, Unspecified: 0 };
     const trackCounts = { Academic: 0, "Tech Professional": 0 };
@@ -587,10 +587,10 @@ export default function ReportsPage() {
     const statusReport =
       total === 0
         ? "No applications recorded for the selected filters. Promote the enrollment schedule and monitor incoming submissions to plan staffing and sectioning early."
-        : byStatus.pending >= Math.max(byStatus.enrolled, byStatus.rejected)
+        : byStatus.pending >= Math.max(byStatus.enrolled, byStatus.denied)
           ? `Prioritize review: ${byStatus.pending} pending application${byStatus.pending === 1 ? "" : "s"} (${pct(byStatus.pending, total).toFixed(1)}%) need action. Assign reviewers and set daily targets to reduce backlog and speed up enrollment decisions.`
-          : byStatus.rejected > byStatus.enrolled
-            ? `Review quality signals: ${byStatus.rejected} rejected application${byStatus.rejected === 1 ? "" : "s"} (${pct(byStatus.rejected, total).toFixed(1)}%). Audit common rejection reasons and improve applicant guidance/requirements communication.`
+          : byStatus.denied > byStatus.enrolled
+            ? `Review quality signals: ${byStatus.denied} denied application${byStatus.denied === 1 ? "" : "s"} (${pct(byStatus.denied, total).toFixed(1)}%). Audit common denial reasons and improve applicant guidance/requirements communication.`
             : `Enrollment flow is healthy with ${byStatus.enrolled} enrolled (${pct(byStatus.enrolled, total).toFixed(1)}%). Continue timely processing of remaining ${byStatus.pending} pending item${byStatus.pending === 1 ? "" : "s"} to sustain completion rates.`;
 
     const clusterReport =
@@ -671,7 +671,7 @@ export default function ReportsPage() {
     push(["Total Applications", analytics.total, "100.0%"]);
     push(["Pending", analytics.byStatus.pending, `${analytics.pct(analytics.byStatus.pending, Math.max(analytics.total, 1)).toFixed(1)}%`]);
     push(["Enrolled", analytics.byStatus.enrolled, `${analytics.pct(analytics.byStatus.enrolled, Math.max(analytics.total, 1)).toFixed(1)}%`]);
-    push(["Rejected", analytics.byStatus.rejected, `${analytics.pct(analytics.byStatus.rejected, Math.max(analytics.total, 1)).toFixed(1)}%`]);
+    push(["Denied", analytics.byStatus.denied, `${analytics.pct(analytics.byStatus.denied, Math.max(analytics.total, 1)).toFixed(1)}%`]);
     push([]);
 
     push(["PRESCRIPTIVE ANALYTICS - APPLICATION STATUS"]);
@@ -1176,7 +1176,7 @@ export default function ReportsPage() {
             { label: "Records in report", value: analytics.total },
             { label: "Pending", value: analytics.byStatus.pending },
             { label: "Enrolled", value: analytics.byStatus.enrolled },
-            { label: "Rejected", value: analytics.byStatus.rejected },
+            { label: "Denied", value: analytics.byStatus.denied },
           ].map((k) => (
             <div
               key={k.label}
@@ -1235,7 +1235,7 @@ export default function ReportsPage() {
                 <option value="all">All status</option>
                 <option value="pending">Pending</option>
                 <option value="enrolled">Enrolled</option>
-                <option value="rejected">Rejected</option>
+                <option value="denied">Denied</option>
               </select>
             </label>
           )}
@@ -1401,7 +1401,7 @@ export default function ReportsPage() {
                     segments={[
                       { label: "Pending", value: analytics.byStatus.pending, color: "#6ee7b7" },
                       { label: "Enrolled", value: analytics.byStatus.enrolled, color: "#10b981" },
-                      { label: "Rejected", value: analytics.byStatus.rejected, color: "#065f46" },
+                      { label: "Denied", value: analytics.byStatus.denied, color: "#c2410c" },
                     ]}
                   />
                   <div className="absolute inset-0 flex items-center justify-center text-center">
@@ -1415,7 +1415,7 @@ export default function ReportsPage() {
                   {([
                     { label: "Pending", value: analytics.byStatus.pending, color: "bg-emerald-300" },
                     { label: "Enrolled", value: analytics.byStatus.enrolled, color: "bg-emerald-500" },
-                    { label: "Rejected", value: analytics.byStatus.rejected, color: "bg-emerald-800" },
+                    { label: "Denied", value: analytics.byStatus.denied, color: "bg-orange-700" },
                   ] as const).map((item) => (
                     <div key={item.label} className="flex items-center justify-between gap-3">
                       <span className="flex items-center gap-2 text-emerald-900"><span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />{item.label}</span>

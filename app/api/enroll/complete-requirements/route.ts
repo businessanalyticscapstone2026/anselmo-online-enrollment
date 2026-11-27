@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logActivity } from "@/lib/activityLog";
+import { normalizeEnrollmentStatus } from "@/lib/enrollmentStatus";
 import {
   STORAGE_FOLDERS,
   cleanStorageSegment,
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
 
     let targetRowId = draftId;
     let storedEmail = text(body.email);
+    let currentApplication: Record<string, unknown> | null = null;
 
     if (!draftId) {
       const resolved = await resolveApplicationForUpload(supabaseAdmin, body);
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
         );
       }
 
+      currentApplication = resolved.application;
       targetRowId = String(resolved.application.id);
       storedEmail = resolved.storedEmail;
     }
@@ -202,8 +205,42 @@ export async function POST(request: Request) {
       submitted_at: nowIso,
     };
 
+    // A denied applicant who uploads new documents re-enters the pending
+    // review queue. Keep the application row and archive the denial reason so
+    // the record is not lost when the status changes back to pending.
+    const isDeniedResubmission =
+      !draftId &&
+      normalizeEnrollmentStatus(currentApplication?.status) === "denied";
+    const existingDetails = asRecord(currentApplication?.student_details);
+    const previousRemarks =
+      typeof currentApplication?.registrar_remarks === "string"
+        ? currentApplication.registrar_remarks.trim()
+        : "";
+    const denialHistory = Array.isArray(existingDetails.denial_remarks_history)
+      ? (existingDetails.denial_remarks_history as unknown[])
+      : [];
+    const baseResubmissionFields = isDeniedResubmission
+      ? { status: "pending", registrar_remarks: null }
+      : {};
+    const fullResubmissionFields = isDeniedResubmission
+      ? {
+          ...baseResubmissionFields,
+          student_details: {
+            ...existingDetails,
+            denial_remarks_history: previousRemarks
+              ? [
+                  ...denialHistory,
+                  { remarks: previousRemarks, recorded_at: nowIso },
+                ]
+              : denialHistory,
+            requirements_resubmitted_at: nowIso,
+          },
+        }
+      : {};
+
     if (!draftId) {
       const fullUpdate: Record<string, unknown> = {
+        ...fullResubmissionFields,
         requirements_documents: requirementsDocuments,
         birth_certificate_url: bcResult.signedUrl || bcResult.publicUrl,
         report_card_url: rcResult.signedUrl || rcResult.publicUrl,
@@ -224,6 +261,7 @@ export async function POST(request: Request) {
         updateRes = await supabaseAdmin
           .from("student_applications")
           .update({
+            ...baseResubmissionFields,
             requirements_documents: requirementsDocuments,
             updated_at: nowIso,
           })
@@ -240,7 +278,9 @@ export async function POST(request: Request) {
       await logActivity({
         userType: "Student",
         userEmail: text(body.email) || storedEmail || "",
-        action: "Uploaded Enrollment Requirements",
+        action: isDeniedResubmission
+          ? "Resubmitted Enrollment Requirements"
+          : "Uploaded Enrollment Requirements",
         details: {
           applicationId: targetRowId,
           studentName: studentName || null,
@@ -249,6 +289,7 @@ export async function POST(request: Request) {
             reportCard: rcResult.name,
             form137: otherResult?.name || null,
           },
+          previousRemarks: previousRemarks || null,
           timestamp: nowIso,
         },
       });
@@ -258,10 +299,13 @@ export async function POST(request: Request) {
       success: true,
       message: draftId
         ? "Requirements uploaded. They will be recorded when the account step is completed."
-        : "Requirements uploaded and recorded successfully.",
+        : isDeniedResubmission
+          ? "Your requirements were resubmitted. Your application is back in the pending review queue."
+          : "Requirements uploaded and recorded successfully.",
       data: {
         applicationId: draftId ? null : targetRowId,
         draftId: draftId || null,
+        status: isDeniedResubmission ? "pending" : undefined,
         requirements_documents: requirementsDocuments,
         storageBucket: bucket,
       },

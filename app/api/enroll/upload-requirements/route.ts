@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logActivity } from "@/lib/activityLog";
+import { normalizeEnrollmentStatus } from "@/lib/enrollmentStatus";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -484,8 +485,40 @@ export async function POST(request: Request) {
       submitted_at: nowIso,
     };
 
-    // 4. Update student_applications table in Supabase
+    // 4. Update student_applications table in Supabase. A denied applicant who
+    // re-uploads documents returns to the pending queue; the denial reason is
+    // archived in student_details so the application record is preserved.
+    const isDeniedResubmission =
+      normalizeEnrollmentStatus(application?.status) === "denied";
+    const existingDetails = asRecord(application?.student_details);
+    const previousRemarks =
+      typeof application?.registrar_remarks === "string"
+        ? application.registrar_remarks.trim()
+        : "";
+    const denialHistory = Array.isArray(existingDetails.denial_remarks_history)
+      ? (existingDetails.denial_remarks_history as unknown[])
+      : [];
+    const baseResubmissionFields = isDeniedResubmission
+      ? { status: "pending", registrar_remarks: null }
+      : {};
+    const fullResubmissionFields = isDeniedResubmission
+      ? {
+          ...baseResubmissionFields,
+          student_details: {
+            ...existingDetails,
+            denial_remarks_history: previousRemarks
+              ? [
+                  ...denialHistory,
+                  { remarks: previousRemarks, recorded_at: nowIso },
+                ]
+              : denialHistory,
+            requirements_resubmitted_at: nowIso,
+          },
+        }
+      : {};
+
     const fullUpdate: Record<string, unknown> = {
+      ...fullResubmissionFields,
       requirements_documents: requirementsDocuments,
       birth_certificate_url: bcResult.signedUrl || bcResult.publicUrl,
       report_card_url: rcResult.signedUrl || rcResult.publicUrl,
@@ -506,6 +539,7 @@ export async function POST(request: Request) {
       updateRes = await supabaseAdmin
         .from("student_applications")
         .update({
+          ...baseResubmissionFields,
           requirements_documents: requirementsDocuments,
           updated_at: nowIso,
         })
@@ -522,7 +556,9 @@ export async function POST(request: Request) {
     await logActivity({
       userType: "Student",
       userEmail: providedEmail || storedEmail || "",
-      action: "Uploaded Enrollment Requirements",
+      action: isDeniedResubmission
+        ? "Resubmitted Enrollment Requirements"
+        : "Uploaded Enrollment Requirements",
       details: {
         applicationId: targetRowId,
         studentName: studentName || null,
@@ -531,15 +567,19 @@ export async function POST(request: Request) {
           reportCard: reportCard.name,
           form137: form137?.name || null,
         },
+        previousRemarks: previousRemarks || null,
         timestamp: nowIso,
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Requirements uploaded and recorded successfully in Supabase.",
+      message: isDeniedResubmission
+        ? "Your requirements were resubmitted. Your application is back in the pending review queue."
+        : "Requirements uploaded and recorded successfully in Supabase.",
       data: {
         applicationId: targetRowId,
+        status: isDeniedResubmission ? "pending" : undefined,
         requirements_documents: requirementsDocuments,
         storageBucket: targetBucket,
       },
