@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthContext } from "@/lib/auth/server";
 import { hasValidMfaCookie } from "@/lib/auth/mfaCookie";
 import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activityLog";
 import { hasReceivedCredentials } from "@/lib/applicationVisibility";
+import { isWalkInRecord } from "@/lib/walkInEnrollment";
 import { syncStudentProfile } from "@/lib/studentProfiles";
 import {
   getEnrollmentStatusLabel,
@@ -154,6 +155,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const walkIn = isWalkInRecord(applicationRecord);
     const previousStatus = normalizeEnrollmentStatus(applicationRecord.status);
     const now = new Date().toISOString();
 
@@ -269,7 +271,9 @@ export async function POST(request: Request) {
       );
     }
 
-    await syncStudentProfile(supabaseAdmin, applicationId);
+    if (!walkIn) {
+      await syncStudentProfile(supabaseAdmin, applicationId);
+    }
 
     const savedRemark = Object.prototype.hasOwnProperty.call(
       updateResult.data,
@@ -281,60 +285,68 @@ export async function POST(request: Request) {
       )
       : null;
 
-    let emailSent = false;
-    const emailConfigured = Boolean(getMailConfig());
-    let emailError: string | null = null;
+    const shouldNotify = !walkIn;
+    const actorUserType = isAdminRole(auth.role) ? "Admin" : "Staff";
+    const actorEmail = auth.user.email || "";
 
-    const statusChanged = true;
-    const studentEmail = await resolveStudentEmail(
-      supabaseAdmin,
-      applicationRecord
-    );
-    const assignedSection = await fetchAssignedSection(
-      supabaseAdmin,
-      applicationRecord
-    );
+    after(async () => {
+      try {
+        let emailSent = false;
+        let emailError: string | null = null;
+        const emailConfigured = Boolean(getMailConfig());
+        const studentEmail = shouldNotify
+          ? await resolveStudentEmail(supabaseAdmin, applicationRecord)
+          : null;
+        const assignedSection = shouldNotify
+          ? await fetchAssignedSection(supabaseAdmin, applicationRecord)
+          : null;
 
-    if (statusChanged) {
-      if (!studentEmail) {
-        emailError =
-          "No registered email address is on file for this application.";
-      } else if (!emailConfigured) {
-        emailError =
-          "The email service is not configured (SMTP credentials missing).";
-      } else {
-        try {
-          await sendEnrollmentStatusEmail({
-            email: studentEmail,
-            studentName: resolveStudentName(applicationRecord),
-            status: targetStatus,
-            remarks: targetRemark,
-            section: assignedSection,
-          });
-          emailSent = true;
-        } catch (err: unknown) {
-          console.error("Enrollment status email dispatch error:", err);
-          emailError =
-            err instanceof Error ? err.message : "SMTP sendMail error";
+        if (shouldNotify) {
+          if (!studentEmail) {
+            emailError =
+              "No registered email address is on file for this application.";
+          } else if (!emailConfigured) {
+            emailError =
+              "The email service is not configured (SMTP credentials missing).";
+          } else {
+            try {
+              await sendEnrollmentStatusEmail({
+                email: studentEmail,
+                studentName: resolveStudentName(applicationRecord),
+                status: targetStatus,
+                remarks: targetRemark,
+                section: assignedSection,
+              });
+              emailSent = true;
+            } catch (err: unknown) {
+              console.error("Enrollment status email dispatch error:", err);
+              emailError =
+                err instanceof Error ? err.message : "SMTP sendMail error";
+            }
+          }
         }
-      }
-    }
 
-    await logActivity({
-      userType: isAdminRole(auth.role) ? "Admin" : "Staff",
-      userEmail: auth.user.email || "",
-      action: `Updated Enrollment Status: ${getEnrollmentStatusLabel(
-        targetStatus
-      )}`,
-      details: {
-        applicationId,
-        previousStatus,
-        newStatus: targetStatus,
-        studentEmail: studentEmail || null,
-        remarks: targetRemark || null,
-        statusChanged,
-        timestamp: now,
-      },
+        await logActivity({
+          userType: actorUserType,
+          userEmail: actorEmail,
+          action: `Updated Enrollment Status: ${getEnrollmentStatusLabel(
+            targetStatus
+          )}`,
+          details: {
+            applicationId,
+            previousStatus,
+            newStatus: targetStatus,
+            studentEmail: studentEmail || null,
+            remarks: targetRemark || null,
+            statusChanged: true,
+            emailSent,
+            emailError,
+            timestamp: now,
+          },
+        });
+      } catch (bgError) {
+        console.error("Background post-status-update task failed:", bgError);
+      }
     });
 
     return NextResponse.json({
@@ -344,15 +356,12 @@ export async function POST(request: Request) {
         status: targetStatus,
         statusLabel: getEnrollmentStatusLabel(targetStatus),
         registrar_remarks: savedRemark,
-        section: assignedSection,
-        statusChanged,
-        emailSent,
-        emailConfigured,
-        emailError,
+        statusChanged: true,
+        emailQueued: shouldNotify,
       },
       message: `Enrollment status successfully updated to "${getEnrollmentStatusLabel(
         targetStatus
-      )}".${emailSent ? ` A notification email was sent to ${studentEmail}.` : ""}`,
+      )}".${shouldNotify ? " A notification email will be sent shortly." : ""}`,
     });
   } catch (error: unknown) {
     console.error("Error in staff update-status route:", error);

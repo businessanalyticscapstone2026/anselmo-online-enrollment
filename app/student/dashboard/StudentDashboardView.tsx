@@ -452,10 +452,6 @@ export default function StudentDashboardView({
   ]);
   const remarks = getText(application, ["registrar_remarks"]);
 
-  const profileStatus =
-    getText(studentProfile, ["status"]) || statusLabel;
-  const profileStatusLabel =
-    statusLabels[normalizeStatus(profileStatus)] ?? profileStatus;
   const profileName =
     getText(studentProfile, ["full_name"]) || studentName;
   const profileTrack =

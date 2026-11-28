@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthContext } from "@/lib/auth/server";
 import { hasValidMfaCookie } from "@/lib/auth/mfaCookie";
 import { isAdminRole, isStaffRole } from "@/lib/auth/roles";
 import { logActivity } from "@/lib/activityLog";
 import { hasReceivedCredentials } from "@/lib/applicationVisibility";
+import { isWalkInRecord } from "@/lib/walkInEnrollment";
 import { syncStudentProfile } from "@/lib/studentProfiles";
 import { getMailConfig } from "@/lib/mailer";
 import {
@@ -187,6 +188,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const walkIn = isWalkInRecord(applicationRecord);
     const previousSectionId =
       application.assigned_section_id != null
         ? String(application.assigned_section_id)
@@ -253,65 +255,78 @@ export async function POST(request: Request) {
       );
     }
 
-    await syncStudentProfile(supabaseAdmin, applicationId);
-
-    const sectionChanged = savedSectionId !== previousSectionId;
-
-    let emailSent = false;
-    const emailConfigured = Boolean(getMailConfig());
-    let emailError: string | null = null;
-
-    if (sectionChanged && sectionId) {
-      const studentEmail = await resolveStudentEmail(
-        supabaseAdmin,
-        applicationRecord
-      );
-
-      if (!studentEmail) {
-        emailError =
-          "No registered email address is on file for this application.";
-      } else if (!emailConfigured) {
-        emailError =
-          "The email service is not configured (SMTP credentials missing).";
-      } else {
-        try {
-          const assigned = await fetchAssignedSection(supabaseAdmin, {
-            assigned_section_id: sectionId,
-          });
-
-          if (assigned) {
-            await sendSectionAssignmentEmail({
-              email: studentEmail,
-              studentName: resolveStudentName(applicationRecord),
-              section: assigned,
-            });
-            emailSent = true;
-          } else {
-            emailError =
-              "The assigned section details could not be loaded for the email.";
-          }
-        } catch (err: unknown) {
-          console.error("Section assignment email dispatch error:", err);
-          emailError =
-            err instanceof Error ? err.message : "SMTP sendMail error";
-        }
-      }
+    if (!walkIn) {
+      await syncStudentProfile(supabaseAdmin, applicationId);
     }
 
-    await logActivity({
-      userType: isAdminRole(auth.role) ? "Admin" : "Staff",
-      userEmail: auth.user.email || "",
-      action: sectionId
-        ? `Assigned Section: ${section?.name || savedSectionId}`
-        : "Cleared Section Assignment",
-      details: {
-        applicationId,
-        previousSectionId,
-        assignedSectionId: savedSectionId,
-        sectionName: section?.name || null,
-        sectionChanged,
-        timestamp: now,
-      },
+    const sectionChanged = savedSectionId !== previousSectionId;
+    const shouldNotify = sectionChanged && !!sectionId && !walkIn;
+    const actorUserType = isAdminRole(auth.role) ? "Admin" : "Staff";
+    const actorEmail = auth.user.email || "";
+
+    after(async () => {
+      try {
+        let emailSent = false;
+        let emailError: string | null = null;
+        const emailConfigured = Boolean(getMailConfig());
+
+        if (shouldNotify) {
+          const studentEmail = await resolveStudentEmail(
+            supabaseAdmin,
+            applicationRecord
+          );
+
+          if (!studentEmail) {
+            emailError =
+              "No registered email address is on file for this application.";
+          } else if (!emailConfigured) {
+            emailError =
+              "The email service is not configured (SMTP credentials missing).";
+          } else {
+            try {
+              const assigned = await fetchAssignedSection(supabaseAdmin, {
+                assigned_section_id: sectionId,
+              });
+
+              if (assigned) {
+                await sendSectionAssignmentEmail({
+                  email: studentEmail,
+                  studentName: resolveStudentName(applicationRecord),
+                  section: assigned,
+                });
+                emailSent = true;
+              } else {
+                emailError =
+                  "The assigned section details could not be loaded for the email.";
+              }
+            } catch (err: unknown) {
+              console.error("Section assignment email dispatch error:", err);
+              emailError =
+                err instanceof Error ? err.message : "SMTP sendMail error";
+            }
+          }
+        }
+
+        await logActivity({
+          userType: actorUserType,
+          userEmail: actorEmail,
+          action: sectionId
+            ? `Assigned Section: ${section?.name || savedSectionId}`
+            : "Cleared Section Assignment",
+          details: {
+            applicationId,
+            previousSectionId,
+            assignedSectionId: savedSectionId,
+            sectionName: section?.name || null,
+            sectionChanged,
+            emailSent,
+            emailError,
+            timestamp: now,
+          },
+        });
+      } catch (bgError) {
+        console.error("Background post-section-assignment task failed:", bgError);
+      }
     });
 
     return NextResponse.json({
@@ -321,13 +336,11 @@ export async function POST(request: Request) {
         assigned_section_id: savedSectionId,
         section,
         sectionChanged,
-        emailSent,
-        emailConfigured,
-        emailError,
+        emailQueued: shouldNotify,
       },
-      message: emailSent
-        ? "Section and adviser saved. A notification email was sent to the student."
-        : undefined,
+      message: shouldNotify
+        ? "Section and adviser saved. A notification email will be sent shortly."
+        : "Section assignment saved successfully.",
     });
   } catch (error: unknown) {
     return NextResponse.json(

@@ -99,12 +99,12 @@ export default function SectionsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [assignmentFilter, setAssignmentFilter] = useState<
     "assigned" | "unassigned"
   >("unassigned");
   const [trackFilter, setTrackFilter] = useState<"all" | TrackValue>("all");
   const [clusterFilter, setClusterFilter] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
   const [usingDefaultSections, setUsingDefaultSections] = useState(false);
   const [hasRemoteUpdates, setHasRemoteUpdates] = useState(false);
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -142,15 +142,11 @@ export default function SectionsPage() {
       if (appsRes.error) {
         setError(`Applications: ${appsRes.error.message}`);
       } else {
-        // Enrolled and pending students can be reviewed here after their
-        // credentials have been delivered. Rejected applications remain in
-        // Applications & Requirements.
+        // Only enrolled students appear in Section & Adviser records.
         const applicationList = filterVisibleApplications(
           (appsRes.data ?? []) as App[]
-        ).filter((r) =>
-          ["enrolled", "pending"].includes(
-            normalizeEnrollmentStatus(r.status)
-          )
+        ).filter(
+          (r) => normalizeEnrollmentStatus(r.status) === "enrolled"
         );
         setApps(applicationList);
 
@@ -271,6 +267,7 @@ export default function SectionsPage() {
             error?: string;
             data?: {
               assigned_section_id?: string | null;
+              emailQueued?: boolean;
               emailSent?: boolean;
               emailError?: string | null;
               emailConfigured?: boolean;
@@ -303,11 +300,14 @@ export default function SectionsPage() {
       );
       setHasRemoteUpdates(false);
 
-      const emailNotice = result.data?.emailSent
-        ? " A notification email with the section and adviser was sent to the student."
-        : result.data?.emailError
-          ? ` The student could not be notified by email: ${result.data.emailError}`
-          : "";
+      const emailNotice =
+        result.data?.emailQueued === true
+          ? " A notification email will be sent shortly."
+          : result.data?.emailSent
+            ? " A notification email with the section and adviser was sent to the student."
+            : result.data?.emailError
+              ? ` The student could not be notified by email: ${result.data.emailError}`
+              : "";
 
       setMessage(
         `Section assignment saved successfully: ${section?.name || "Unassigned"}.${emailNotice}`
@@ -461,11 +461,13 @@ export default function SectionsPage() {
   }
 
   const filtered = useMemo(() => {
-    const term = search.toLowerCase();
+    const term = studentSearch.toLowerCase().trim();
     const list = apps.filter((a) => {
       const assigned = hasSectionAssignment(a);
       if (assignmentFilter === "assigned" ? !assigned : assigned) return false;
-      const name = `${a.first_name ?? ""} ${a.middle_name ?? ""} ${a.last_name ?? ""} ${a.id ?? ""}`.toLowerCase();
+      if (!term) return true;
+      const name =
+        `${a.first_name ?? ""} ${a.middle_name ?? ""} ${a.last_name ?? ""} ${a.id ?? ""}`.toLowerCase();
       return name.includes(term);
     });
 
@@ -489,7 +491,7 @@ export default function SectionsPage() {
     return trackMatched.filter(
       (a) => resolveApplicationCluster(a).trim().toLowerCase() === targetCluster
     );
-  }, [apps, search, trackFilter, assignmentFilter, clusterFilter]);
+  }, [apps, studentSearch, trackFilter, assignmentFilter, clusterFilter]);
 
   const sectionsByTrack = useMemo(
     () =>
@@ -517,7 +519,7 @@ export default function SectionsPage() {
           </p>
           <h1 className="mt-2 text-3xl font-extrabold">Section & Adviser</h1>
           <p className="mt-2 text-sm text-emerald-900">
-            Review enrolled and pending students, assign them to Senior High School sections, and view designated advisers.
+            Review enrolled students, assign them to Senior High School sections, and view designated advisers.
           </p>
         </div>
         <button
@@ -567,123 +569,7 @@ export default function SectionsPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:flex-row">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search student by name…"
-          className="flex-1 rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm text-emerald-700 outline-none placeholder:text-emerald-800 focus:border-emerald-200"
-        />
-      </div>
 
-      <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
-        <div className="flex flex-col gap-3 border-b border-emerald-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-semibold">Manage Sections &amp; Advisers</h2>
-            <p className="mt-1 text-xs text-emerald-800">
-              Add a new section with its adviser, or edit and delete existing
-              sections.
-            </p>
-          </div>
-          <button
-            onClick={openAddSection}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-xs font-bold text-emerald-950 hover:bg-yellow-300"
-          >
-            <Plus size={14} />
-            Add Section
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-left text-sm">
-            <colgroup>
-              <col className="w-[18%]" />
-              <col className="w-[15%]" />
-              <col className="w-[11%]" />
-              <col className="w-[15%]" />
-              <col className="w-[11%]" />
-              <col className="w-[9%]" />
-              <col className="w-[21%]" />
-            </colgroup>
-            <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900">
-              <tr>
-                <th className="px-3 py-3">Section</th>
-                <th className="px-3 py-3">Adviser</th>
-                <th className="px-3 py-3">Track</th>
-                <th className="px-3 py-3">Grade / Cluster</th>
-                <th className="px-3 py-3">School Year</th>
-                <th className="px-3 py-3">Capacity</th>
-                <th className="px-3 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-emerald-200/10">
-              {sectionsByTrack.length > 0 ? (
-                sectionsByTrack.map((s) => (
-                  <tr key={String(s.id)} className="hover:bg-emerald-50">
-                    <td className="wrap-break-word px-3 py-4 font-semibold">{s.name}</td>
-                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
-                      {s.adviser_name || (
-                        <span className="text-emerald-800">Not assigned</span>
-                      )}
-                    </td>
-                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
-                      {resolveSectionTrack(s) ? (
-                        getTrackLabel(resolveSectionTrack(s))
-                      ) : (
-                        <span className="text-emerald-800">—</span>
-                      )}
-                    </td>
-                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
-                      {[s.grade_level, s.strand ?? s.cluster]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </td>
-                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
-                      {s.school_year || "—"}
-                    </td>
-                    <td className="px-3 py-4 text-xs text-emerald-900">
-                      <span className="font-semibold text-emerald-700">
-                        {assignedCount(s.id)}
-                      </span>
-                      <span className="text-emerald-800">
-                        {" / "}
-                        {s.capacity ?? "—"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-4">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <button
-                          onClick={() => openEditSection(s)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
-                        >
-                          <Pencil size={13} />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => requestDelete(s)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 size={13} />
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-3 py-10 text-center text-emerald-900"
-                  >
-                    No sections yet. Use &ldquo;Add Section&rdquo; to create one.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
         <div className="flex flex-col gap-2 border-b border-emerald-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -699,6 +585,18 @@ export default function SectionsPage() {
             {filtered.length} {assignmentFilter} student
             {filtered.length === 1 ? "" : "s"}
           </span>
+        </div>
+
+        <div className="border-b border-emerald-200 px-5 py-3">
+          <div className="relative max-w-sm">
+            <input
+              type="text"
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              placeholder="Search student name..."
+              className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-emerald-900 outline-none placeholder:text-emerald-500 focus:border-emerald-400"
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-emerald-200 px-5 py-3">
@@ -1000,6 +898,117 @@ export default function SectionsPage() {
                   >
                     <Users className="mx-auto mb-2 opacity-50" size={24} />
                     No {assignmentFilter} students found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="my-4 border-t-2 border-emerald-300" />
+
+      <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
+        <div className="flex flex-col gap-3 border-b border-emerald-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold">Manage Sections &amp; Advisers</h2>
+            <p className="mt-1 text-xs text-emerald-800">
+              Add a new section with its adviser, or edit and delete existing
+              sections.
+            </p>
+          </div>
+          <button
+            onClick={openAddSection}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-xs font-bold text-emerald-950 hover:bg-yellow-300"
+          >
+            <Plus size={14} />
+            Add Section
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[15%]" />
+              <col className="w-[11%]" />
+              <col className="w-[15%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+              <col className="w-[21%]" />
+            </colgroup>
+            <thead className="bg-emerald-50 text-[10px] uppercase tracking-wider text-emerald-900">
+              <tr>
+                <th className="px-3 py-3">Section</th>
+                <th className="px-3 py-3">Adviser</th>
+                <th className="px-3 py-3">Track</th>
+                <th className="px-3 py-3">Grade / Cluster</th>
+                <th className="px-3 py-3">School Year</th>
+                <th className="px-3 py-3">Capacity</th>
+                <th className="px-3 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-emerald-200/10">
+              {sectionsByTrack.length > 0 ? (
+                sectionsByTrack.map((s) => (
+                  <tr key={String(s.id)} className="hover:bg-emerald-50">
+                    <td className="wrap-break-word px-3 py-4 font-semibold">{s.name}</td>
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
+                      {s.adviser_name || (
+                        <span className="text-emerald-800">Not assigned</span>
+                      )}
+                    </td>
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
+                      {resolveSectionTrack(s) ? (
+                        getTrackLabel(resolveSectionTrack(s))
+                      ) : (
+                        <span className="text-emerald-800">—</span>
+                      )}
+                    </td>
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
+                      {[s.grade_level, s.strand ?? s.cluster]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </td>
+                    <td className="wrap-break-word px-3 py-4 text-xs text-emerald-900">
+                      {s.school_year || "—"}
+                    </td>
+                    <td className="px-3 py-4 text-xs text-emerald-900">
+                      <span className="font-semibold text-emerald-700">
+                        {assignedCount(s.id)}
+                      </span>
+                      <span className="text-emerald-800">
+                        {" / "}
+                        {s.capacity ?? "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          onClick={() => openEditSection(s)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
+                        >
+                          <Pencil size={13} />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => requestDelete(s)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 size={13} />
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-3 py-10 text-center text-emerald-900"
+                  >
+                    No sections yet. Use &ldquo;Add Section&rdquo; to create one.
                   </td>
                 </tr>
               )}

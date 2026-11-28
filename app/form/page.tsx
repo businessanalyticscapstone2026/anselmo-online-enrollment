@@ -20,6 +20,20 @@ import {
   SPECIAL_NEEDS_MANIFESTATIONS,
 } from "@/lib/enrollmentFormOptions";
 
+const GENDER_OPTIONS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+] as const;
+
+const LAST_SCHOOL_OPTIONS = [
+  "Aplonario National High School",
+  "Mabini College of Batangas",
+  "Saint Francis Academy",
+  "St. Lucrecia's",
+  "Sta. Fe Integrated School",
+  "Other",
+] as const;
+
 interface AddressState {
   houseNo: string;
   street: string;
@@ -235,9 +249,19 @@ function calculateAgeFromBirthDate(value: string): string {
 
 const TODAY = new Date();
 const CURRENT_YEAR = TODAY.getFullYear();
+const MIN_ENROLLMENT_AGE = 16;
 const MIN_BIRTH_YEAR = CURRENT_YEAR - 30;
 const MIN_BIRTH_DATE = `${MIN_BIRTH_YEAR}-01-01`;
 const MAX_BIRTH_DATE = dateInputValue(TODAY);
+
+function getMinimumAllowedBirthDate(): string {
+  const cutoff = new Date(TODAY);
+  cutoff.setFullYear(cutoff.getFullYear() - MIN_ENROLLMENT_AGE);
+  return dateInputValue(cutoff);
+}
+
+const MAX_ALLOWED_BIRTH_DATE_FOR_AGE = getMinimumAllowedBirthDate();
+const AGE_UNDER_MIN_WARNING = `Applicants aged 15 and below are not eligible to enroll. Applicant must be at least ${MIN_ENROLLMENT_AGE} years old.`;
 
 function uppercaseValue(value: string): string {
   return value.toUpperCase();
@@ -398,12 +422,32 @@ function FormContent() {
       20
     )
   );
-  const [lastSchoolAttended, setLastSchoolAttended] = useState(() =>
-    keepTextAndNumberCharacters(
-      stringValue(savedDraft?.lastSchoolAttended),
-      150
-    )
+  const initialLastSchool = keepTextAndNumberCharacters(
+    stringValue(savedDraft?.lastSchoolAttended),
+    150
   );
+  const [lastSchoolAttended, setLastSchoolAttended] = useState(() => {
+    if (
+      initialLastSchool &&
+      !LAST_SCHOOL_OPTIONS.includes(
+        initialLastSchool as (typeof LAST_SCHOOL_OPTIONS)[number]
+      )
+    ) {
+      return "Other";
+    }
+    return initialLastSchool;
+  });
+  const [lastSchoolAttendedOther, setLastSchoolAttendedOther] = useState(() => {
+    if (
+      initialLastSchool &&
+      !LAST_SCHOOL_OPTIONS.includes(
+        initialLastSchool as (typeof LAST_SCHOOL_OPTIONS)[number]
+      )
+    ) {
+      return initialLastSchool;
+    }
+    return "";
+  });
   const [lastSchoolId, setLastSchoolId] = useState(() =>
     keepDigits(stringValue(savedDraft?.lastSchoolId), 6)
   );
@@ -435,6 +479,11 @@ function FormContent() {
     message: string;
   } | null>(null);
 
+  const resolvedLastSchoolAttended =
+    lastSchoolAttended === "Other"
+      ? lastSchoolAttendedOther.trim()
+      : lastSchoolAttended.trim();
+
   useEffect(() => {
     const draft: SavedFormDraft = {
       lrn,
@@ -460,7 +509,7 @@ function FormContent() {
       specialNeedsDetail,
       hasPwdId,
       lastSchoolYearCompleted,
-      lastSchoolAttended,
+      lastSchoolAttended: resolvedLastSchoolAttended,
       lastSchoolId,
       preferredModalities,
       currentAddress,
@@ -581,6 +630,10 @@ function FormContent() {
       return `Birth date must be between ${MIN_BIRTH_YEAR} and ${CURRENT_YEAR}.`;
     }
 
+    if (dob > MAX_ALLOWED_BIRTH_DATE_FOR_AGE) {
+      return AGE_UNDER_MIN_WARNING;
+    }
+
     const ageNumber = Number(age);
     if (
       !age.trim() ||
@@ -589,6 +642,14 @@ function FormContent() {
       ageNumber > 100
     ) {
       return "Age must be a whole number between 10 and 100.";
+    }
+
+    if (ageNumber < MIN_ENROLLMENT_AGE) {
+      return AGE_UNDER_MIN_WARNING;
+    }
+
+    if (lastSchoolAttended === "Other" && !lastSchoolAttendedOther.trim()) {
+      return "Please specify the last school attended.";
     }
 
     if (!pob.trim()) {
@@ -790,7 +851,7 @@ function FormContent() {
       specialNeedsDetail: specialNeedsProgram ? specialNeedsDetail : "",
       hasPwdId,
       lastSchoolYearCompleted: lastSchoolYearCompleted.trim(),
-      lastSchoolAttended: lastSchoolAttended.trim(),
+      lastSchoolAttended: resolvedLastSchoolAttended,
       lastSchoolId: lastSchoolId.trim(),
       preferredModalities: [...preferredModalities],
       currentAddress: cleanCurrentAddress,
@@ -1177,6 +1238,11 @@ function FormContent() {
                   }}
                   min={MIN_BIRTH_DATE}
                   max={MAX_BIRTH_DATE}
+                  warning={
+                    dob && dob > MAX_ALLOWED_BIRTH_DATE_FOR_AGE
+                      ? AGE_UNDER_MIN_WARNING
+                      : undefined
+                  }
                   required
                 />
 
@@ -1189,6 +1255,11 @@ function FormContent() {
                   min="10"
                   max="100"
                   inputMode="numeric"
+                  warning={
+                    age.trim() !== "" && Number(age) < MIN_ENROLLMENT_AGE
+                      ? AGE_UNDER_MIN_WARNING
+                      : undefined
+                  }
                   required
                 />
 
@@ -1206,49 +1277,20 @@ function FormContent() {
                   <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-700">
                     GENDER <span className="text-red-600">*</span>
                   </label>
-                  <div
-                    role="radiogroup"
+                  <select
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    required
+                    className="portal-input"
                     aria-label="Gender"
-                    className="grid grid-cols-2 gap-3"
                   >
-                    {[
-                      { value: "male", label: "Male" },
-                      { value: "female", label: "Female" },
-                    ].map((option) => {
-                      const selected = gender === option.value;
-
-                      return (
-                        <label
-                          key={option.value}
-                          className={`flex cursor-pointer items-center justify-center gap-2.5 rounded-xl border-2 px-4 py-3.5 text-sm font-semibold transition ${selected
-                            ? "border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm"
-                            : "border-gray-300 bg-white text-gray-700 hover:border-emerald-300 hover:bg-emerald-50/40"
-                            }`}
-                        >
-                          <input
-                            type="radio"
-                            name="gender"
-                            value={option.value}
-                            checked={selected}
-                            onChange={() => setGender(option.value)}
-                            required
-                            className="sr-only"
-                          />
-                          <span
-                            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${selected
-                              ? "border-emerald-600"
-                              : "border-gray-400"
-                              }`}
-                          >
-                            {selected && (
-                              <span className="h-2 w-2 rounded-full bg-emerald-600" />
-                            )}
-                          </span>
-                          <span>{option.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                    <option value="">Select Gender</option>
+                    {GENDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <FormInput
@@ -1679,17 +1721,46 @@ function FormContent() {
                     }
                     maxLength={20}
                   />
-                  <FormInput
-                    label="LAST SCHOOL ATTENDED"
-                    placeholder="e.g., AASMNHS"
-                    value={lastSchoolAttended}
-                    onChange={(e) =>
-                      setLastSchoolAttended(
-                        keepTextAndNumberCharacters(e.target.value, 150)
-                      )
-                    }
-                    maxLength={150}
-                  />
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-700">
+                      LAST SCHOOL ATTENDED
+                    </label>
+                    <select
+                      value={lastSchoolAttended}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setLastSchoolAttended(value);
+                        if (value !== "Other") {
+                          setLastSchoolAttendedOther("");
+                        }
+                      }}
+                      className="portal-input"
+                      aria-label="Last school attended"
+                    >
+                      <option value="">Select School (Optional)</option>
+                      {LAST_SCHOOL_OPTIONS.map((school) => (
+                        <option key={school} value={school}>
+                          {school}
+                        </option>
+                      ))}
+                    </select>
+                    {lastSchoolAttended === "Other" && (
+                      <div className="mt-3">
+                        <FormInput
+                          label="SPECIFY LAST SCHOOL ATTENDED"
+                          placeholder="Enter school name"
+                          value={lastSchoolAttendedOther}
+                          onChange={(e) =>
+                            setLastSchoolAttendedOther(
+                              keepTextAndNumberCharacters(e.target.value, 150)
+                            )
+                          }
+                          maxLength={150}
+                          required
+                        />
+                      </div>
+                    )}
+                  </div>
                   <FormInput
                     label="SCHOOL ID"
                     placeholder="6 digits"
@@ -1986,6 +2057,7 @@ function FormInput({
   maxLength,
   title,
   autoComplete,
+  warning,
 }: {
   label: string;
   placeholder?: string;
@@ -2004,6 +2076,7 @@ function FormInput({
   maxLength?: number;
   title?: string;
   autoComplete?: string;
+  warning?: string;
 }) {
   return (
     <div className="min-w-0">
@@ -2029,8 +2102,14 @@ function FormInput({
         title={title}
         autoComplete={autoComplete}
         autoCapitalize={type === "text" ? "characters" : undefined}
-        className="portal-input"
+        className={`portal-input ${warning ? "border-amber-400 focus:border-amber-500 focus:ring-amber-100" : ""}`}
+        aria-invalid={warning ? true : undefined}
       />
+      {warning ? (
+        <p className="mt-1.5 text-xs font-medium text-amber-700" role="alert">
+          {warning}
+        </p>
+      ) : null}
     </div>
   );
 }

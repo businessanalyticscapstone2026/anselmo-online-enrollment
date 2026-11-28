@@ -1,4 +1,5 @@
 import { normalizeEnrollmentStatus } from "@/lib/enrollmentStatus";
+import { isWalkInRecord } from "@/lib/walkInEnrollment";
 
 type ApplicationVisibilityRecord = {
   status?: unknown;
@@ -34,6 +35,12 @@ function readStudentDetails(value: unknown): Record<string, unknown> {
 export function hasReceivedCredentials(
   record: ApplicationVisibilityRecord
 ): boolean {
+  // Walk-ins are encoded by the registrar and never receive credentials, so
+  // they must stay visible to staff even though credentials_sent is false.
+  if (isWalkInRecord(record as Record<string, unknown>)) {
+    return true;
+  }
+
   const details = readStudentDetails(record.student_details);
 
   if (Object.prototype.hasOwnProperty.call(details, "credentials_sent")) {

@@ -6,7 +6,6 @@ import {
   BarChart3,
   CheckCircle2,
   Clock,
-  Download,
   Lightbulb,
   MapPin,
   RefreshCw,
@@ -14,7 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { filterVisibleApplications } from "@/lib/applicationVisibility";
+import { hasReceivedCredentials } from "@/lib/applicationVisibility";
 import type { EnrollmentStatus } from "@/lib/enrollmentStatus";
 import {
   evaluateEnrollmentAvailability,
@@ -32,11 +31,8 @@ import {
   getStatus,
   getSubmittedDate,
   getTrack,
-  hasFourPs,
-  hasIpCommunity,
-  hasPwdId,
   hasRequirements,
-  hasSpecialNeeds,
+  isRecognizedEnrollmentStatus,
   type ApplicationRecord,
 } from "../_components/analytics";
 import {
@@ -62,11 +58,7 @@ const RANGE_LABELS: Record<RangeKey, string> = {
   all: "All time",
 };
 
-const TRACK_FILTER_LABELS: Record<TrackFilter, string> = {
-  all: "All tracks",
-  academic: "Academic track",
-  techpro: "Technical Professional",
-};
+
 
 const TREND_COLORS = ["#176b4d", "#6ba8c7", "#c8b27c", "#d58aa1", "#94a3b8"];
 
@@ -96,31 +88,22 @@ const INSIGHT_STYLES: Record<
   },
 };
 
-function csvCell(value: string | number): string {
-  return `"${String(value).replace(/"/g, '""')}"`;
-}
 
-function downloadCsv(
-  filename: string,
-  rows: (string | number)[][]
-): void {
-  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
-  const blob = new Blob([`\uFEFF${csv}`], {
-    type: "text/csv;charset=utf-8;",
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 function formatPercent(value: number): string {
   return `${value.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   })}%`;
+}
+
+function ChartSuggestion({ text }: { text: string }) {
+  return (
+    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+      <span className="font-bold uppercase tracking-wider text-amber-700">Suggestion: </span>
+      {text}
+    </div>
+  );
 }
 
 export default function AnalyticsPage() {
@@ -160,11 +143,23 @@ export default function AnalyticsPage() {
       if (applicationsResult.error) {
         setError(applicationsResult.error.message);
       } else {
-        const visible = filterVisibleApplications(
-          (applicationsResult.data ?? []) as ApplicationRecord[]
-        );
         setRecords(
-          visible.filter((record) => getStatus(record) !== "rejected")
+          ((applicationsResult.data ?? []) as ApplicationRecord[]).filter(
+            (record) => {
+              // Ignore records with unknown/unrecognized status values so they
+              // do not inflate totals or get miscounted as pending.
+              if (!isRecognizedEnrollmentStatus(record.status)) return false;
+
+              const status = getStatus(record);
+              if (status === "rejected") return false;
+              // Exclude pending records that haven't completed credential delivery,
+              // as they are not actionable staff-visible applications.
+              if (status === "pending" && !hasReceivedCredentials(record)) {
+                return false;
+              }
+              return true;
+            }
+          )
         );
       }
 
@@ -332,18 +327,13 @@ export default function AnalyticsPage() {
     return { academic, techpro, unknown };
   }, [filtered]);
 
-  const barangayMunicipalities = useMemo(
-    () =>
-      buildCountBreakdown(
-        filtered,
-        (record) => {
-          const barangay = getBarangay(record);
-          const municipality = getMunicipality(record);
-          if (barangay && municipality) return `${barangay}, ${municipality}`;
-          return barangay || municipality;
-        },
-        8
-      ),
+  const barangays = useMemo(
+    () => buildCountBreakdown(filtered, getBarangay, 8),
+    [filtered]
+  );
+
+  const municipalities = useMemo(
+    () => buildCountBreakdown(filtered, getMunicipality, 8),
     [filtered]
   );
 
@@ -360,22 +350,6 @@ export default function AnalyticsPage() {
       rate: total > 0 ? Math.round((complete / total) * 1000) / 10 : 0,
     };
   }, [filtered, total]);
-
-  const flags = useMemo(() => {
-    let ip = 0;
-    let fourPs = 0;
-    let special = 0;
-    let pwd = 0;
-
-    for (const record of filtered) {
-      if (hasIpCommunity(record)) ip += 1;
-      if (hasFourPs(record)) fourPs += 1;
-      if (hasSpecialNeeds(record)) special += 1;
-      if (hasPwdId(record)) pwd += 1;
-    }
-
-    return { ip, fourPs, special, pwd };
-  }, [filtered]);
 
   const requirementsCompletion = requirements.rate;
 
@@ -427,9 +401,8 @@ export default function AnalyticsPage() {
       list.push({
         tone: "good",
         title: "The enrollment window is open",
-        detail: `Applications are being accepted until ${
-          availability.endDate ?? "the configured end date"
-        }. Keep monitoring daily volume.`,
+        detail: `Applications are being accepted until ${availability.endDate ?? "the configured end date"
+          }. Keep monitoring daily volume.`,
       });
     } else {
       list.push({
@@ -442,24 +415,34 @@ export default function AnalyticsPage() {
     if (pendingAged > 0) {
       list.push({
         tone: "warn",
-        title: `${pendingAged} pending application${
-          pendingAged === 1 ? "" : "s"
-        } older than 3 days`,
+        title: `${pendingAged} pending application${pendingAged === 1 ? "" : "s"
+          } older than 3 days`,
         detail:
           "Review these records first and send follow-up reminders so learners are not left waiting.",
       });
     }
 
-    const topLocation = barangayMunicipalities.data[0];
-    if (topLocation) {
+    const topBarangay = barangays.data[0];
+    if (topBarangay) {
       list.push({
         tone: "info",
-        title: `Top applicant location: ${topLocation.label}`,
-        detail: `${topLocation.value} application${
-          topLocation.value === 1 ? "" : "s"
-        } (${formatPercent(
-          topLocation.percentage
-        )}) came from this barangay and municipality.`,
+        title: `Top barangay: ${topBarangay.label}`,
+        detail: `${topBarangay.value} application${topBarangay.value === 1 ? "" : "s"
+          } (${formatPercent(
+            topBarangay.percentage
+          )}) came from this barangay.`,
+      });
+    }
+
+    const topMunicipality = municipalities.data[0];
+    if (topMunicipality) {
+      list.push({
+        tone: "info",
+        title: `Top municipality: ${topMunicipality.label}`,
+        detail: `${topMunicipality.value} application${topMunicipality.value === 1 ? "" : "s"
+          } (${formatPercent(
+            topMunicipality.percentage
+          )}) came from this municipality.`,
       });
     }
 
@@ -467,15 +450,12 @@ export default function AnalyticsPage() {
       list.push({
         tone: "info",
         title: `Average applicant age: ${ages.average}`,
-        detail: `Computed from ${ages.total} application${
-          ages.total === 1 ? "" : "s"
-        } with a recorded age${
-          ages.unrecorded > 0
-            ? `; ${ages.unrecorded} application${
-                ages.unrecorded === 1 ? "" : "s"
-              } still have no age on file`
+        detail: `Computed from ${ages.total} application${ages.total === 1 ? "" : "s"
+          } with a recorded age${ages.unrecorded > 0
+            ? `; ${ages.unrecorded} application${ages.unrecorded === 1 ? "" : "s"
+            } still have no age on file`
             : ""
-        }.`,
+          }.`,
       });
     }
 
@@ -485,9 +465,8 @@ export default function AnalyticsPage() {
         title: `Requirements completion is ${formatPercent(
           requirementsCompletion
         )}`,
-        detail: `${requirements.incomplete} application${
-          requirements.incomplete === 1 ? "" : "s"
-        } still need documents. Send reminders to improve completion.`,
+        detail: `${requirements.incomplete} application${requirements.incomplete === 1 ? "" : "s"
+          } still need documents. Send reminders to improve completion.`,
       });
     } else {
       list.push({
@@ -506,9 +485,8 @@ export default function AnalyticsPage() {
         title: `Projected ${projection.projected.toLocaleString()} applications by the deadline`,
         detail: `At the current pace of ${projection.dailyRate.toFixed(
           1
-        )} applications per day, with ${projection.remainingDays} day${
-          projection.remainingDays === 1 ? "" : "s"
-        } remaining.`,
+        )} applications per day, with ${projection.remainingDays} day${projection.remainingDays === 1 ? "" : "s"
+          } remaining.`,
       });
     }
 
@@ -518,11 +496,10 @@ export default function AnalyticsPage() {
       list.push({
         tone: "info",
         title: `${topCluster.name} is the most requested cluster`,
-        detail: `${topCluster.value} application${
-          topCluster.value === 1 ? "" : "s"
-        } (${formatPercent(
-          topCluster.percentage
-        )}). Allocate advisers and section slots to match this demand.`,
+        detail: `${topCluster.value} application${topCluster.value === 1 ? "" : "s"
+          } (${formatPercent(
+            topCluster.percentage
+          )}). Allocate advisers and section slots to match this demand.`,
       });
     }
 
@@ -532,9 +509,8 @@ export default function AnalyticsPage() {
       list.push({
         tone: "info",
         title: `Most preferred college course: ${topCourse.label}`,
-        detail: `${topCourse.value} learner${
-          topCourse.value === 1 ? "" : "s"
-        } selected it. Use this for college-readiness and career guidance planning.`,
+        detail: `${topCourse.value} learner${topCourse.value === 1 ? "" : "s"
+          } selected it. Use this for college-readiness and career guidance planning.`,
       });
     }
 
@@ -542,7 +518,8 @@ export default function AnalyticsPage() {
   }, [
     availability,
     pendingAged,
-    barangayMunicipalities.data,
+    barangays.data,
+    municipalities.data,
     ages.total,
     ages.average,
     ages.unrecorded,
@@ -604,71 +581,10 @@ export default function AnalyticsPage() {
     },
   ];
 
-  function handleExport() {
-    const rows: (string | number)[][] = [
-      ["AASMNHS Enrollment Analytics"],
-      [
-        "Generated",
-        new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }),
-      ],
-      ["Range", RANGE_LABELS[range]],
-      ["Track filter", TRACK_FILTER_LABELS[trackFilter]],
-      [],
-      ["Metric", "Value"],
-      ["Total applications", total],
-      ["Enrolled", statusCounts.enrolled],
-      ["Pending", statusCounts.pending],
-      ["Denied", statusCounts.denied],
-      ["Enrollment rate (%)", enrollmentRate],
-      ["New this week", weekCount],
-      ["Submitted today", todayCount],
-      ["Average age (recorded)", ages.average],
-      ["Age recorded", ages.total],
-      ["Age not recorded", ages.unrecorded],
-      ["Pending older than 3 days", pendingAged],
-      ["Requirements complete", requirements.complete],
-      ["Requirements completion rate (%)", requirements.rate],
-      ["IP community", flags.ip],
-      ["4Ps beneficiary", flags.fourPs],
-      ["Special needs program", flags.special],
-      ["With PWD ID", flags.pwd],
-      [],
-      ["Cluster", "Applications", "%"],
-      ...clusters.data.map((item) => [
-        item.name,
-        item.value,
-        item.percentage,
-      ]),
-      [],
-      ["Barangay & Municipality", "Applications", "%"],
-      ...barangayMunicipalities.data.map((item) => [
-        item.label,
-        item.value,
-        item.percentage,
-      ]),
-      [],
-      ["Age group", "Applicants", "%"],
-      ...ages.data.map((item) => [item.label, item.value, item.percentage]),
-      [],
-      ["College course", "Learners", "%"],
-      ...courses.data.map((item) => [
-        item.label,
-        item.value,
-        item.percentage,
-      ]),
-      [],
-      ["Insight", "Detail"],
-      ...insights.map((insight) => [insight.title, insight.detail]),
-    ];
 
-    downloadCsv(
-      `enrollment-analytics-${new Date().toISOString().slice(0, 10)}.csv`,
-      rows
-    );
-  }
 
   return (
-    <div className="space-y-7 text-emerald-700">
+    <div className="space-y-5 text-emerald-700">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
@@ -707,11 +623,10 @@ export default function AnalyticsPage() {
             )}
 
             <span
-              className={`rounded-full border px-3 py-1 font-semibold ${
-                availability.isOpen
+              className={`rounded-full border px-3 py-1 font-semibold ${availability.isOpen
                   ? "border-emerald-300 bg-emerald-100 text-emerald-800"
                   : "border-amber-300 bg-amber-50 text-amber-800"
-              }`}
+                }`}
             >
               {availability.isOpen
                 ? "Enrollment open"
@@ -721,14 +636,6 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="flex flex-wrap gap-2 self-start">
-          <button
-            type="button"
-            onClick={handleExport}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold hover:bg-emerald-100"
-          >
-            <Download size={14} />
-            Export CSV
-          </button>
 
           <button
             type="button"
@@ -826,52 +733,28 @@ export default function AnalyticsPage() {
             })}
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-3">
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6 xl:col-span-2">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold">Trending Clusters</h2>
-                  <p className="mt-1 text-xs text-emerald-800">
-                    Daily applications per cluster over the last {trendDays}{" "}
-                    days.
-                  </p>
-                </div>
-
-                <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                  Top{" "}
-                  {clusterTrend.keys.length -
-                    (clusterTrend.otherKey ? 1 : 0)}{" "}
-                  cluster
-                  {clusterTrend.keys.length -
-                    (clusterTrend.otherKey ? 1 : 0) ===
-                  1
-                    ? ""
-                    : "s"}
-                </span>
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold">Trending Clusters</h2>
+                <p className="mt-1 text-xs text-emerald-800">
+                  Daily applications per cluster over the last {trendDays} days.
+                </p>
               </div>
 
-              <div className="mt-5">
-                <LineTrendChart points={trendPoints} series={trendSeries} />
-              </div>
-            </section>
+              <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                Top {clusterTrend.keys.length - (clusterTrend.otherKey ? 1 : 0)} cluster
+                {clusterTrend.keys.length - (clusterTrend.otherKey ? 1 : 0) === 1 ? "" : "s"}
+              </span>
+            </div>
 
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
-              <h2 className="text-lg font-bold">Status Breakdown</h2>
-              <p className="mt-1 text-xs text-emerald-800">
-                Current processing state of applications in the selected range.
-              </p>
+            <div className="mt-4">
+              <LineTrendChart points={trendPoints} series={trendSeries} />
+            </div>
+            <ChartSuggestion text={clusters.data[0] ? `Monitor "${clusters.data[0].name}" trend closely and prepare sections/advisers ahead of peak days.` : "Collect more daily submissions to identify cluster demand trends."} />
+          </section>
 
-              <div className="mt-6">
-                <DonutChart
-                  data={statusData}
-                  centerValue={formatPercent(enrollmentRate)}
-                  centerLabel="Enrolled"
-                />
-              </div>
-            </section>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
               <h2 className="text-lg font-bold">Cluster Demand</h2>
               <p className="mt-1 text-xs text-emerald-800">
@@ -888,6 +771,7 @@ export default function AnalyticsPage() {
                   emptyLabel="No cluster selections yet"
                 />
               </div>
+              <ChartSuggestion text={clusters.data[0] ? `Prioritize section capacity and adviser assignment for ${clusters.data[0].name}, the highest-demand cluster.` : "No cluster demand yet; promote cluster options during enrollment orientation."} />
             </section>
 
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
@@ -899,6 +783,7 @@ export default function AnalyticsPage() {
               <div className="mt-5">
                 <BarList data={trackData} total={total} />
               </div>
+              <ChartSuggestion text={trackCounts.academic >= trackCounts.techpro ? "Academic track leads demand; ensure enough academic sections and subject teachers are scheduled." : "Technical Professional track leads demand; prepare labs, equipment, and TVL advisers accordingly."} />
             </section>
 
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
@@ -914,6 +799,7 @@ export default function AnalyticsPage() {
                   centerLabel="Recorded"
                 />
               </div>
+              <ChartSuggestion text={genders.unrecorded > 0 ? `Follow up on ${genders.unrecorded} records with missing gender data to improve reporting accuracy.` : "Gender data is complete; use this profile for balanced sectioning and support planning."} />
             </section>
 
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
@@ -937,25 +823,47 @@ export default function AnalyticsPage() {
                   emptyLabel="No age data yet"
                 />
               </div>
+              <ChartSuggestion text={ages.data[0] ? `Most applicants are ${ages.data[0].label}; tailor guidance and onboarding activities for this age group.` : "No age data yet; verify birthdate encoding for accurate age analytics."} />
             </section>
 
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6 lg:col-span-2 xl:col-span-1">
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
               <div className="flex items-center gap-2">
                 <MapPin size={16} className="text-emerald-700" />
-                <h2 className="text-lg font-bold">Barangay &amp; Municipality</h2>
+                <h2 className="text-lg font-bold">Top Barangays</h2>
               </div>
               <p className="mt-1 text-xs text-emerald-800">
-                Connected applicant location view by barangay and municipality.
+                Barangays most frequently entered by applicants in their enrollment form.
               </p>
 
               <div className="mt-5">
                 <BarList
-                  data={barangayMunicipalities.data}
-                  total={barangayMunicipalities.total}
+                  data={barangays.data}
+                  total={barangays.total}
                   color="#6ba8c7"
-                  emptyLabel="No barangay or municipality data yet"
+                  emptyLabel="No barangay data yet"
                 />
               </div>
+              <ChartSuggestion text={barangays.data[0] ? `Focus outreach and enrollment assistance in ${barangays.data[0].label}, the top barangay source.` : "No barangay data yet; ensure applicants complete address fields in the enrollment form."} />
+            </section>
+
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <MapPin size={16} className="text-emerald-700" />
+                <h2 className="text-lg font-bold">Top Municipalities</h2>
+              </div>
+              <p className="mt-1 text-xs text-emerald-800">
+                Municipalities/cities most frequently entered by applicants in their enrollment form.
+              </p>
+
+              <div className="mt-5">
+                <BarList
+                  data={municipalities.data}
+                  total={municipalities.total}
+                  color="#5f8f7b"
+                  emptyLabel="No municipality data yet"
+                />
+              </div>
+              <ChartSuggestion text={municipalities.data[0] ? `Coordinate communication efforts with ${municipalities.data[0].label}, where most applicants are coming from.` : "No municipality data yet; check address encoding completeness."} />
             </section>
 
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
@@ -972,71 +880,25 @@ export default function AnalyticsPage() {
                   emptyLabel="No college course data yet"
                 />
               </div>
+              <ChartSuggestion text={courses.data[0] ? `Align career guidance and SHS electives with interest in ${courses.data[0].label}.` : "No course preference data yet; encourage students to complete this field."} />
+            </section>
+
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
+              <h2 className="text-lg font-bold">Status Breakdown</h2>
+              <p className="mt-1 text-xs text-emerald-800">
+                Current processing state of applications in the selected range.
+              </p>
+
+              <div className="mt-5">
+                <DonutChart
+                  data={statusData}
+                  centerValue={formatPercent(enrollmentRate)}
+                  centerLabel="Enrolled"
+                />
+              </div>
+              <ChartSuggestion text={statusCounts.pending > 0 ? `Prioritize reviewing ${statusCounts.pending} pending application${statusCounts.pending === 1 ? "" : "s"} to improve enrollment completion.` : "No pending applications; maintain current processing pace."} />
             </section>
           </div>
-
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
-            <h2 className="text-lg font-bold">Requirements Completion</h2>
-            <p className="mt-1 text-xs text-emerald-800">
-              Applicants with at least one uploaded requirement.
-            </p>
-
-            <div className="mt-5 flex items-end justify-between gap-4">
-              <div>
-                <p className="text-3xl font-extrabold tabular-nums text-emerald-950">
-                  {formatPercent(requirements.rate)}
-                </p>
-                <p className="text-xs text-emerald-800">
-                  {requirements.complete} complete · {requirements.incomplete}{" "}
-                  missing
-                </p>
-              </div>
-
-              <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                {requirements.complete} / {total}
-              </span>
-            </div>
-
-            <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-emerald-200">
-              <div
-                className="h-full rounded-full bg-emerald-700 transition-all duration-500"
-                style={{ width: `${Math.min(100, requirements.rate)}%` }}
-              />
-            </div>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  label: "IP community",
-                  value: flags.ip,
-                },
-                {
-                  label: "4Ps beneficiary",
-                  value: flags.fourPs,
-                },
-                {
-                  label: "Special needs program",
-                  value: flags.special,
-                },
-                {
-                  label: "With PWD ID",
-                  value: flags.pwd,
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-xl border border-emerald-200 bg-white/70 p-3"
-                >
-                  <p className="text-xs font-semibold text-emerald-700">
-                    {item.label}
-                  </p>
-                  <p className="mt-1 text-xl font-bold tabular-nums text-emerald-950">
-                    {item.value.toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
 
           <section className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 sm:p-6">
             <div className="flex items-start gap-3">

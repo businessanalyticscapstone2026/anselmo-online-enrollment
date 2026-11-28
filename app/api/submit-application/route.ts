@@ -25,8 +25,20 @@ const MAX_BIRTH_DATE = new Date(Date.now() + 8 * 60 * 60 * 1000)
   .toISOString()
   .slice(0, 10);
 const CURRENT_YEAR = Number(MAX_BIRTH_DATE.slice(0, 4));
+const MIN_ENROLLMENT_AGE = 16;
 const MIN_BIRTH_YEAR = CURRENT_YEAR - 30;
 const MIN_BIRTH_DATE = `${MIN_BIRTH_YEAR}-01-01`;
+
+function getMaximumAllowedBirthDateForAge(): string {
+  const [year, month, day] = MAX_BIRTH_DATE.split("-").map(Number);
+  const cutoffYear = year - MIN_ENROLLMENT_AGE;
+  const maxDay = new Date(Date.UTC(cutoffYear, month, 0)).getUTCDate();
+  const safeDay = Math.min(day, maxDay);
+  return `${cutoffYear}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+const MAX_ALLOWED_BIRTH_DATE_FOR_AGE = getMaximumAllowedBirthDateForAge();
+const AGE_UNDER_MIN_MESSAGE = `Applicants aged 15 and below are not eligible to enroll. Applicant must be at least ${MIN_ENROLLMENT_AGE} years old.`;
 
 const GUARDIAN_LABELS = ["Father", "Mother", "Legal Guardian"];
 const REQUIRED_GUARDIAN_FIELDS: Array<[keyof ReturnType<typeof guardianValue>, string]> = [
@@ -408,11 +420,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (birthDate > MAX_ALLOWED_BIRTH_DATE_FOR_AGE) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: AGE_UNDER_MIN_MESSAGE,
+        },
+        { status: 400 }
+      );
+    }
+
     if (age === null || age < 10 || age > 100) {
       return NextResponse.json(
         {
           success: false,
           message: "Age must be a whole number between 10 and 100.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (age < MIN_ENROLLMENT_AGE) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: AGE_UNDER_MIN_MESSAGE,
         },
         { status: 400 }
       );

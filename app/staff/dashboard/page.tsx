@@ -509,7 +509,7 @@ export default function StaffDashboardPage() {
             Registrar Overview
           </p>
 
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl-">
             Dashboard
           </h1>
 
@@ -1017,11 +1017,11 @@ export default function StaffDashboardPage() {
               ) : applications.length > 0 ? (
                 applications.slice(0, 6).map((app, index) => {
                   const status = getStatus(app);
-                  const applicationId = String(app.id ?? "No ID");
+                  const applicationId = String(app.id ?? "");
 
                   return (
                     <tr
-                      key={applicationId === "No ID" ? index : applicationId}
+                      key={applicationId || `app-${index}`}
                       className="hover:bg-emerald-50"
                     >
                       <td className="wrap-break-word px-4 py-4 font-medium">

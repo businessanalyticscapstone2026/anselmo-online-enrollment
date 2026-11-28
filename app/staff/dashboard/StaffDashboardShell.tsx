@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Files,
   Users,
+  UserPlus,
   FileSpreadsheet,
   BarChart3,
   LogOut,
@@ -25,19 +26,24 @@ const navItems = [
     exact: true,
   },
   {
-    href: "/staff/dashboard/analytics",
-    label: "Analytics",
-    icon: BarChart3,
-  },
-  {
     href: "/staff/dashboard/applications",
     label: "Applications & Requirements",
     icon: Files,
   },
   {
+    href: "/staff/dashboard/analytics",
+    label: "Analytics",
+    icon: BarChart3,
+  },
+  {
     href: "/staff/dashboard/sections",
     label: "Section & Adviser",
     icon: Users,
+  },
+  {
+    href: "/staff/dashboard/walk-ins",
+    label: "Manage Walk-ins",
+    icon: UserPlus,
   },
   {
     href: "/staff/dashboard/reports",

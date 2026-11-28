@@ -288,15 +288,47 @@ export function buildClusterBreakdown(applications: ApplicationRecord[]) {
   };
 }
 
+const RECOGNIZED_STATUSES = new Set([
+  "pending",
+  "enrolled",
+  "approved",
+  "denied",
+  "rejected",
+]);
+
+export function isRecognizedEnrollmentStatus(value: unknown): boolean {
+  const status = String(value ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, "_");
+  return RECOGNIZED_STATUSES.has(status);
+}
+
 export function getStatus(record: ApplicationRecord): EnrollmentStatus {
   return normalizeEnrollmentStatus(record.status);
+}
+
+function readAddressField(
+  details: Record<string, unknown> | null,
+  key: "barangay" | "municipality"
+): string {
+  if (!details) return "";
+  const current = asRecord(details.current_address);
+  const permanent = asRecord(details.permanent_address);
+  const keys =
+    key === "municipality"
+      ? ["municipality", "city", "municipality_city"]
+      : [key];
+
+  return readText(current, keys) || readText(permanent, keys);
 }
 
 export function getBarangay(record: ApplicationRecord): string {
   const details = asRecord(record.student_details);
   return (
     readText(record, ["current_barangay", "barangay"]) ||
-    readText(details, ["current_barangay", "barangay"])
+    readText(details, ["current_barangay", "barangay"]) ||
+    readAddressField(details, "barangay")
   );
 }
 
@@ -304,7 +336,8 @@ export function getMunicipality(record: ApplicationRecord): string {
   const details = asRecord(record.student_details);
   return (
     readText(record, ["current_municipality", "municipality", "city"]) ||
-    readText(details, ["current_municipality", "municipality", "city"])
+    readText(details, ["current_municipality", "municipality", "city"]) ||
+    readAddressField(details, "municipality")
   );
 }
 

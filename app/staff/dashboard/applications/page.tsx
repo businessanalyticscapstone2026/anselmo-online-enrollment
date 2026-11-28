@@ -9,6 +9,7 @@ import {
 } from "@/lib/enrollmentStatus";
 import { supabase } from "@/lib/supabaseClient";
 import { filterVisibleApplications } from "@/lib/applicationVisibility";
+import { isWalkInRecord } from "@/lib/walkInEnrollment";
 import {
   Search,
   RefreshCw,
@@ -22,6 +23,7 @@ import {
   Clock3,
   Save,
   Lock,
+  UserPlus,
 } from "lucide-react";
 
 type AppRecord = Record<string, unknown>;
@@ -360,6 +362,7 @@ export default function ApplicationsPage() {
           status?: string;
           registrar_remarks?: string | null;
           statusChanged?: boolean;
+          emailQueued?: boolean;
           emailSent?: boolean;
           emailError?: string | null;
         };
@@ -412,11 +415,14 @@ export default function ApplicationsPage() {
       setStatusDraft(verifiedStatus);
       setStatusRemarks(savedRemark ?? "");
 
-      const emailNotice = result.data?.emailSent
-        ? " A notification email was sent to the student's registered email."
-        : result.data?.statusChanged && result.data?.emailError
-          ? ` The student could not be notified by email: ${result.data.emailError}`
-          : "";
+      const emailNotice =
+        result.data?.emailQueued === true
+          ? " A notification email will be sent shortly."
+          : result.data?.emailSent
+            ? " A notification email was sent to the student's registered email."
+            : result.data?.statusChanged && result.data?.emailError
+              ? ` The student could not be notified by email: ${result.data.emailError}`
+              : "";
 
       setStatusMessage(
         `Enrollment status successfully updated to "${getEnrollmentStatusLabel(
@@ -838,6 +844,12 @@ export default function ApplicationsPage() {
                           .map(String)
                           .join(" ") || "Unnamed applicant"}
                       </p>
+                      {isWalkInRecord(r) ? (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-800">
+                          <UserPlus size={10} />
+                          Walk-in
+                        </span>
+                      ) : null}
                       <p className="mt-1 font-mono text-[10px] text-emerald-700">
                         {String(r.id).slice(0, 8)}
                       </p>
@@ -933,8 +945,8 @@ export default function ApplicationsPage() {
                     .map(String)
                     .join(" ") || "Student Application"}
                 </h2>
-                <p className="text-xs text-emerald-700 font-mono">
-                  ID: {String(selected.id)}
+                <p className="text-xs text-emerald-700">
+                  Application details
                 </p>
               </div>
               <button
@@ -1174,8 +1186,7 @@ export default function ApplicationsPage() {
                   {[statusTarget.first_name, statusTarget.middle_name, statusTarget.last_name]
                     .filter(Boolean)
                     .map(String)
-                    .join(" ") || "Student Application"}{" "}
-                  · ID: {String(statusTarget.id)}
+                    .join(" ") || "Student Application"}
                 </p>
               </div>
               <button

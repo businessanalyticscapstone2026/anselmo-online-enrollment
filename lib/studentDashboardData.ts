@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isWalkInRecord } from "@/lib/walkInEnrollment";
 
 export type StudentApplicationRecord = Record<string, unknown>;
 export type StudentSectionRecord = Record<string, unknown>;
@@ -96,14 +97,22 @@ export async function getStudentDashboardData(params: {
       .select("*")
       .ilike("email", email)
       .order("submitted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(5);
 
     if (error && !/column .*email.* does not exist/i.test(error.message)) {
       console.error("Student dashboard email lookup failed:", error);
     }
 
-    application = (data as StudentApplicationRecord | null) ?? null;
+    // Walk-ins are registrar-only records. Even when the registrar stored a
+    // contact email that matches a student account, it must never surface on
+    // the student dashboard.
+    const candidates = (data ?? []) as StudentApplicationRecord[];
+    application =
+      candidates.find((candidate) => !isWalkInRecord(candidate)) ?? null;
+  }
+
+  if (application && isWalkInRecord(application)) {
+    application = null;
   }
 
   let section: StudentSectionRecord | null = null;
